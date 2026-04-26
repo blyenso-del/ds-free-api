@@ -105,11 +105,13 @@ async fn handle_chat(
         );
         Ok(ChatHandlerResult::Stream { stream, account_id })
     } else {
+        let repair_fn = adapter.create_repair_fn(request_id);
         let json = crate::openai_adapter::response::aggregate(
             chat_resp.stream,
             model,
             stop,
             prompt_tokens,
+            Some(repair_fn),
         )
         .await?;
         Ok(ChatHandlerResult::Json { json, account_id })

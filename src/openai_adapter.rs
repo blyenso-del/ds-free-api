@@ -67,8 +67,15 @@ impl OpenAIAdapter {
     ) -> Result<ChatResult<Vec<u8>>, OpenAIAdapterError> {
         let req = request::parse(body, &self.model_registry)?;
         let chat_resp = self.try_chat(req.ds_req, request_id).await?;
-        let data =
-            response::aggregate(chat_resp.stream, req.model, req.stop, req.prompt_tokens).await?;
+        let repair_fn = self.create_repair_fn(request_id);
+        let data = response::aggregate(
+            chat_resp.stream,
+            req.model,
+            req.stop,
+            req.prompt_tokens,
+            Some(repair_fn),
+        )
+        .await?;
         Ok(ChatResult {
             data,
             account_id: chat_resp.account_id,

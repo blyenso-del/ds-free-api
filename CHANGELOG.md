@@ -20,25 +20,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   正常完成不再发送停止信号
 - **工具调用自修复（live model fallback）**：当 tool_calls XML 解析失败时，
   使用 DeepSeek 模型自身修复损坏的 JSON，提升工具调用稳定性
-- **e2e 测试按阶段重组**：`smoke` → `protocol` → `tools` → `stress` 渐进式流程，
-  支持 `just e2e-smoke` / `e2e-protocol` / `e2e-tools` / `e2e-stress`
-- **注册 pytest `requires_server` 标记**：消除自定义 mark 警告
+- **`aggregate()` 透传修复管道**：非流式请求现在也走完整的 tool_calls 修复流程，
+  不再跳过 `repair_fn`，流式与非流式行为一致
+- **`parse_tool_calls` arguments 类型归一**：当 arguments 是 JSON 字符串而非对象时，
+  自动解析为对象后重新序列化，避免双重转义导致客户端解析错误
+- **request_id 跨层日志追踪**：在 handler 入口生成 `req-{n}` 标识，沿 adapter → ds_core
+  逐层传递，关键日志带 `req=` 前缀，`grep req=xxx` 可追踪单次请求全链路
+- **x-ds-account 响应头**：通过 `ChatResult<T>` / `ChatResponse` 将 `account_id` 从
+  ds_core 回流到 handler，注入 HTTP 响应头，方便客户端识别处理请求的账号
+- **SseBody `with_header()` 构建器**：支持流式响应中注入自定义 HTTP 响应头
+- **TRACE 日志贯穿流管道**：state → converter → repair → stop 各层增加 `>>> stage: ...`
+  格式的 TRACE 日志，配合 SSE 层的 `<<< event data` 可观察字节在管道中的完整转换过程
+- **pre-commit 钩子**：`.git/hooks/pre-commit`，顺序执行与 CI 一致的全量检查
+  （check → clippy → fmt → audit → machete → test），工具未安装时友好跳过
+- **`Account::display_id()`**：新公开方法返回账号标识（email 优先，mobile 兜底）
+- **账号初始化并发限流**：`AccountPool::init()` 通过 `tokio::sync::Semaphore` 限制
+  并发初始化数为 13，避免对 DeepSeek 端和本地连接池造成压力
+- **e2e 测试重构**：从 pytest 迁移为 JSON 场景驱动框架（`runner.py` + `stress_runner.py`），
+  场景文件独立存放，配置从 `config.toml` 动态读取账号数和 api_key
 
 ### Changed
 - `Account::session_id()` 返回 `Option<String>` 替代 `Option<&str>`，适配内部锁
 - 账号分配日志从 `info` 降为 `debug` 级别
 - SSE trace 日志精简为单行 `<event> <data>` 格式
 - 空内容警告不再误报工具调用场景（`has_tool_calls=true` 时跳过）
-- `justfile` 中 e2e 各阶段统一使用 `-n 4` 并发
+- `justfile` 精简：移除旧 pytest 靶子，保留正交的 `e2e-basic` / `e2e-repair` / `e2e-stress`
 - 更新中英文 README，增加限流处理与并发策略说明
 - 更新 `docs/deepseek-api-reference.md`：添加 `stop_stream` 端点及 message_id 实际模式
+- **日志级别规范化**：全面审计并修正各级别使用
+  - 账号池耗尽 `INFO` → `WARN`
+  - SSE 流错误 `DEBUG` → `WARN`
+  - tool_parser 修复触发 `DEBUG` → `WARN`
+  - tool_calls 修复成功 `DEBUG` → `INFO`
+  - 新增 ERROR：所有账号初始化失败、PoW 计算失败
+- `health_check` 日志增加 `account=` 字段，区分并发初始化时的多账号输出
+- `stream_tool_calls_repair_with_live_ds` 测试标记为 `#[ignore]`，仅手动调用
+- 同步更新 `docs/logging-spec.md`，补充 `anthropic_compat::*`、`http::*` 等实际 target
+- 默认并行数改为 2，推荐并行数 = 账号数 ÷ 2
+
+### Ref
+- [#19](https://github.com/NIyueeE/ds-free-api/pull/19) — 参考 `x-ds-account` 设计思路
 
 ### Removed
 - 移除 `examples/adapter_cli/` 中冗余的 allow 注释
+- 移除旧 pytest e2e 测试目录及遗留脚本
 
 ### Stress Test Results
-- **4 账号 + 4 并发**：58 个 e2e 测试全部通过，耗时 83s
-- **1 账号 + 1 并发**：指数退避机制下同样 58/58 全部通过（耗时 323s）
+- **4 账号 + 3 并发 + 3 迭代**：17 场景（7 basic + 10 repair）× 2 模型 × 3 次迭代 = 102 次请求全部通过，成功率 100%，总耗时 5.9 分钟
+- 覆盖场景：基础对话、深度思考、流式、标准工具调用，以及 10 种 tool_calls 损坏格式
+  （XML 风格、XML+JSON 混合、字段名不一致、arguments 为字符串、括号不匹配、
+  括号缺失、name/arguments 互换、参数外溢等），修复管道全部正确兜底
+- 验证结论：tool_calls 自修复 + `aggregate()` 修复透传 + `parse_tool_calls` 类型归一
+  三层保障下，模型输出的各类非标准格式均能被正确修复，不产生 500 错误
 
 ## [0.2.3] - 2026-04-24
 

@@ -138,15 +138,20 @@ impl AccountPool {
         solver: &PowSolver,
     ) -> Result<(), PoolError> {
         use futures::future::join_all;
+        use std::sync::Arc;
+        use tokio::sync::Semaphore;
 
-        // 全并发初始化所有账号
+        // 限制并发初始化数，避免对 DeepSeek 端和本地连接池造成压力
+        let semaphore = Arc::new(Semaphore::new(13));
         let futures: Vec<_> = creds
             .into_iter()
             .map(|creds| {
                 let client = client.clone();
                 let solver = solver.clone();
                 let model_types = model_types.clone();
+                let sem = semaphore.clone();
                 async move {
+                    let _permit = sem.acquire().await.expect("信号量未关闭");
                     let display_id = if creds.mobile.is_empty() {
                         creds.email.clone()
                     } else {

@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+> **Note**: This file serves dual duty as both `AGENTS.md` (the real file) and `CLAUDE.md` (symlink → `AGENTS.md`).
+> Edit `AGENTS.md` directly; `CLAUDE.md` stays in sync automatically.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
@@ -44,7 +47,7 @@ Key dependencies and why they matter:
 ```
 src/
 ├── main.rs                      # Thin binary wrapper: init logger, load config, run server
-├── lib.rs                       # Public API boundary: exports Config, DeepSeekCore, OpenAIAdapter, AnthropicCompat
+├── lib.rs                       # Public API boundary: exports Config, DeepSeekCore, ChatResponse, OpenAIAdapter, ChatResult, AnthropicCompat
 ├── config.rs                    # Config loader: -c flag, config.toml default
 ├── ds_core.rs                   # DeepSeek facade: DeepSeekCore, CoreError; declares accounts/ client/ completions/ pow
 ├── ds_core/
@@ -105,7 +108,7 @@ This means the file tree does not directly map to the public API. To understand 
 ### Binary / Library Split
 
 - `main.rs` is a thin binary wrapper (~10 lines): init `env_logger`, parse CLI args, load config, call `server::run()`
-- `lib.rs` defines the public API surface: `Config`, `DeepSeekCore`, `CoreError`, `ChatRequest`, `AccountStatus`, `OpenAIAdapter`, `OpenAIAdapterError`, `StreamResponse`, `AnthropicCompat`
+- `lib.rs` defines the public API surface: `Config`, `DeepSeekCore`, `CoreError`, `ChatRequest`, `ChatResponse`, `AccountStatus`, `OpenAIAdapter`, `OpenAIAdapterError`, `ChatResult`, `StreamResponse`, `AnthropicCompat`
 - The crate can be built as both a library (`cargo build --lib`) and a binary (`cargo build --bin ds-free-api`)
 
 ### StreamResponse Type
@@ -129,7 +132,7 @@ This means the file tree does not directly map to the public API. To understand 
 `AccountGuard` marks an account as `busy` and automatically releases it on `Drop`. `GuardedStream` wraps the SSE stream with an `AccountGuard`, so the account is held busy until the stream is fully consumed or dropped. This binds account concurrency to stream lifetime without explicit cleanup logic.
 
 ### Account Initialization Flow
-`AccountPool::init()` spins up all accounts concurrently. Per-account initialization (`try_init_account`) follows:
+`AccountPool::init()` spins up all accounts concurrently (capped at 13 via `tokio::sync::Semaphore`). Per-account initialization (`try_init_account`) follows:
 1. `login` — obtain Bearer token
 2. `create_session` — create chat session
 3. `health_check` — send a test completion (with PoW) to verify the session is writable
@@ -191,7 +194,10 @@ The adapter injects tool definitions as natural language into the prompt and par
 Random base64 padding in SSE chunks to reach a target response size (~512 bytes), controlled by `stream_options.include_obfuscation` (defaults to true).
 
 ### Overloaded Retry
-`OpenAIAdapter::try_chat()` retries up to 3 times with 200ms delay on `CoreError::Overloaded`.
+`OpenAIAdapter::try_chat()` retries up to **6 times** with **exponential backoff** (1s → 2s → 4s → 8s → 16s) on `CoreError::Overloaded`, which is triggered by DeepSeek's `rate_limit_reached` SSE hint or when all accounts are busy.
+
+### request_id & x-ds-account
+Each request gets a `req-{n}` ID generated at the handler, threaded down through adapter → ds_core. Key log points carry `req=` for `grep`-able cross-layer tracing. The `x-ds-account` HTTP response header (set via `SseBody::with_header()`) carries the account identifier upstream from ds_core through `ChatResponse` / `ChatResult<T>` wrappers.
 
 ### HTTP Routes
 **OpenAI-compatible:**
@@ -277,6 +283,12 @@ cp config.example.toml config.toml
 
 # One-pass check (check + clippy + fmt + audit + unused deps)
 just check
+
+# Pre-commit hook runs check + clippy + fmt + audit + machete + cargo test --lib
+# (see .git/hooks/pre-commit — matches CI order)
+
+# Trace through the entire SSE pipeline
+RUST_LOG=adapter=trace,ds_core::accounts=debug,info just serve
 
 # Run the HTTP server
 just serve

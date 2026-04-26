@@ -371,12 +371,18 @@ where
     Box::pin(stop_stream)
 }
 
-/// 非流式响应：复用 stream() 逻辑，收齐 SSE 事件后组装单条 ChatCompletion JSON
+/// 非流式响应：stream() 的下游收集器，纯重组无特殊逻辑
+///
+/// 始终保持为 stream() 的流式收集和重组：
+/// - 所有核心处理（修复、转换、停止序列）都在 stream() 中完成
+/// - 本函数仅将 stream() 的输出事件聚合并重组成单条 ChatCompletion JSON
+/// - 不要在此函数中添加任何独立于 stream() 的处理逻辑
 pub(crate) async fn aggregate<S>(
     ds_stream: S,
     model: String,
     stop: Vec<String>,
     prompt_tokens: u32,
+    repair_fn: Option<RepairFn>,
 ) -> Result<Vec<u8>, OpenAIAdapterError>
 where
     S: Stream<Item = Result<Bytes, crate::ds_core::CoreError>> + Send + 'static,
@@ -391,7 +397,7 @@ where
         false, // include_obfuscation
         stop,
         prompt_tokens,
-        None, // repair_fn — 非流式暂不修复
+        repair_fn,
     );
     futures::pin_mut!(bytes_stream);
 
@@ -589,7 +595,7 @@ mod tests {
     async fn aggregate_plain_text() {
         let frames = make_ds_stream(&[("hello world", "RESPONSE")], Some(41));
         let stream = futures::stream::iter(frames);
-        let json = aggregate(stream, "deepseek-default".into(), vec![], 0)
+        let json = aggregate(stream, "deepseek-default".into(), vec![], 0, None)
             .await
             .unwrap();
         let completion: serde_json::Value = serde_json::from_slice(&json).unwrap();
@@ -610,7 +616,7 @@ mod tests {
     async fn aggregate_thinking() {
         let frames = make_ds_stream(&[("thinking", "THINK"), ("answer", "RESPONSE")], None);
         let stream = futures::stream::iter(frames);
-        let json = aggregate(stream, "deepseek-expert".into(), vec![], 0)
+        let json = aggregate(stream, "deepseek-expert".into(), vec![], 0, None)
             .await
             .unwrap();
         let completion: serde_json::Value = serde_json::from_slice(&json).unwrap();
@@ -630,7 +636,7 @@ mod tests {
         let tool_xml = r#"<tool_calls>[{"name": "get_weather", "arguments": {"city": "beijing"}}]</tool_calls>"#;
         let frames = make_ds_stream(&[(tool_xml, "RESPONSE")], None);
         let stream = futures::stream::iter(frames);
-        let json = aggregate(stream, "deepseek-default".into(), vec![], 0)
+        let json = aggregate(stream, "deepseek-default".into(), vec![], 0, None)
             .await
             .unwrap();
         let completion: serde_json::Value = serde_json::from_slice(&json).unwrap();
@@ -654,7 +660,7 @@ mod tests {
             r#"<tool_calls>[{"name": "get_weather", "arguments": {}}]</tool_calls> trailing text"#;
         let frames = make_ds_stream(&[(tool_xml, "RESPONSE")], None);
         let stream = futures::stream::iter(frames);
-        let json = aggregate(stream, "deepseek-default".into(), vec![], 0)
+        let json = aggregate(stream, "deepseek-default".into(), vec![], 0, None)
             .await
             .unwrap();
         let completion: serde_json::Value = serde_json::from_slice(&json).unwrap();
@@ -1072,7 +1078,7 @@ mod tests {
             None,
         );
         let stream = futures::stream::iter(frames);
-        let json = aggregate(stream, "deepseek-default".into(), vec![], 0)
+        let json = aggregate(stream, "deepseek-default".into(), vec![], 0, None)
             .await
             .unwrap();
         let completion: serde_json::Value = serde_json::from_slice(&json).unwrap();

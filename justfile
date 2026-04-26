@@ -28,33 +28,17 @@ test-adapter-response *ARGS:
 serve *ARGS:
   cargo run -- "$@"
 
-# Run Python e2e tests (requires server running on port 5317; will skip with hint if not)
-# -n 4: 稳定并发（已验证 4 账号 + 指数退避重试可稳定通过）
-# 按文件过滤：just e2e openai_endpoint/test_smoke.py
-e2e *ARGS:
-  cd py-e2e-tests && uv run python -m pytest -n 4 "$@"
+# Basic: 基础功能测试（两端点）
+e2e-basic *ARGS:
+  cd py-e2e-tests && uv run python runner.py scenarios/basic "$@"
 
-# Stage 1 — Smoke: 服务在线、认证、模型列表、基础对话
-e2e-smoke:
-  cd py-e2e-tests && uv run python -m pytest openai_endpoint/test_smoke.py anthropic_endpoint/test_smoke.py -n 4 -v
+# Repair: 工具调用损坏修复专项测试
+e2e-repair *ARGS:
+  cd py-e2e-tests && uv run python runner.py scenarios/repair "$@"
 
-# Stage 2 — Protocol: reasoning/search/stop/system/stream/兼容字段
-e2e-protocol:
-  cd py-e2e-tests && uv run python -m pytest openai_endpoint/test_protocol.py anthropic_endpoint/test_protocol.py -n 4 -v
-
-# Stage 3 — Tools: 工具调用全路径 + 自修复注入
-e2e-tools:
-  cd py-e2e-tests && uv run python -m pytest openai_endpoint/test_tools.py anthropic_endpoint/test_tools.py -n 4 -v
-
-# Stress: 多场景多轮压测（merge gate，push 前可选）
+# Stress: 多迭代并发压测（basic + repair 全部场景）
 e2e-stress *ARGS:
-  uv run python py-e2e-tests/stress_test_tools_openai.py "$@"
-  uv run python py-e2e-tests/stress_test_tools_anthropic.py "$@"
-
-# Full: 所有阶段（pytest + 压测）
-e2e-full *ARGS:
-  just e2e
-  just e2e-stress "$@"
+  cd py-e2e-tests && uv run python stress_runner.py "$@"
 
 # Start server with e2e test config
 e2e-serve:
