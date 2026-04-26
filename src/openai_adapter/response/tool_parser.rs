@@ -251,12 +251,11 @@ enum ToolParseState {
 }
 
 pin_project! {
-    #[allow(unused_doc_comments)]
-    /// 在 content delta 中检测并解析 XML <tool_calls> 的流转换器
-    ///
-    /// 使用固定宽度 W 的滑动窗口：新内容进入缓冲区，扫描后再释放安全部分，
-    /// 确保 `<tool_calls>` 碎片不会溢出窗口。检测到标记后收集完整 XML，
-    /// 解析为结构化 tool_calls 并发出。
+    // 在 content delta 中检测并解析 XML <tool_calls> 的流转换器
+    //
+    // 使用固定宽度 W 的滑动窗口：新内容进入缓冲区，扫描后再释放安全部分，
+    // 确保 `<tool_calls>` 碎片不会溢出窗口。检测到标记后收集完整 XML，
+    // 解析为结构化 tool_calls 并发出。
     pub struct ToolCallStream<S> {
         #[pin]
         inner: S,

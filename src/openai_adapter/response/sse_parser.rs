@@ -19,8 +19,7 @@ pub struct SseEvent {
 }
 
 pin_project! {
-    #[allow(unused_doc_comments)]
-    /// 包装底层字节流，将其切分为独立的 SSE 事件
+    // 包装底层字节流，将其切分为独立的 SSE 事件
     pub struct SseStream<S> {
         #[pin]
         inner: S,

@@ -22,9 +22,7 @@ use std::sync::Arc;
 
 use crate::openai_adapter::{
     OpenAIAdapterError, StreamResponse,
-    types::{
-        ChatCompletion, ChatCompletionChunk, Choice, Delta, MessageResponse, ToolCall, Usage,
-    },
+    types::{ChatCompletion, ChatCompletionChunk, Choice, Delta, MessageResponse, ToolCall, Usage},
 };
 
 static CHATCMPL_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -429,28 +427,28 @@ where
             });
         }
 
-        if let Some(choices) = v["choices"].as_array() {
-            if let Some(choice) = choices.first() {
-                if finish_reason.is_none() {
-                    finish_reason = choice["finish_reason"].as_str().and_then(|s| match s {
-                        "tool_calls" => Some(FINISH_TOOL_CALLS),
-                        "stop" => Some(FINISH_STOP),
-                        _ => None,
-                    });
-                }
-                if let Some(c) = choice["delta"]["content"].as_str() {
-                    content.push_str(c);
-                }
-                if let Some(r) = choice["delta"]["reasoning_content"].as_str() {
-                    reasoning.push_str(r);
-                }
-                if let Some(tc) = choice["delta"]["tool_calls"].as_array() {
-                    if !tc.is_empty() {
-                        tool_calls = Some(serde_json::from_value(
-                            choice["delta"]["tool_calls"].clone(),
-                        )?);
-                    }
-                }
+        if let Some(choices) = v["choices"].as_array()
+            && let Some(choice) = choices.first()
+        {
+            if finish_reason.is_none() {
+                finish_reason = choice["finish_reason"].as_str().and_then(|s| match s {
+                    "tool_calls" => Some(FINISH_TOOL_CALLS),
+                    "stop" => Some(FINISH_STOP),
+                    _ => None,
+                });
+            }
+            if let Some(c) = choice["delta"]["content"].as_str() {
+                content.push_str(c);
+            }
+            if let Some(r) = choice["delta"]["reasoning_content"].as_str() {
+                reasoning.push_str(r);
+            }
+            if let Some(tc) = choice["delta"]["tool_calls"].as_array()
+                && !tc.is_empty()
+            {
+                tool_calls = Some(serde_json::from_value(
+                    choice["delta"]["tool_calls"].clone(),
+                )?);
             }
         }
     }
@@ -462,7 +460,11 @@ where
     };
 
     let has_tool_calls = tool_calls.is_some();
-    let message_content = if content.is_empty() { None } else { Some(content) };
+    let message_content = if content.is_empty() {
+        None
+    } else {
+        Some(content)
+    };
     let final_reason = if has_tool_calls {
         Some(FINISH_TOOL_CALLS)
     } else {
@@ -526,7 +528,11 @@ mod tests {
 
         for (idx, (content, frag_type)) in pieces.iter().enumerate() {
             let is_first = idx == 0;
-            let prev_type = if idx > 0 { Some(pieces[idx - 1].1) } else { None };
+            let prev_type = if idx > 0 {
+                Some(pieces[idx - 1].1)
+            } else {
+                None
+            };
             let type_changed = prev_type != Some(*frag_type);
 
             if is_first {
@@ -594,10 +600,7 @@ mod tests {
 
     #[tokio::test]
     async fn aggregate_thinking() {
-        let frames = make_ds_stream(
-            &[("thinking", "THINK"), ("answer", "RESPONSE")],
-            None,
-        );
+        let frames = make_ds_stream(&[("thinking", "THINK"), ("answer", "RESPONSE")], None);
         let stream = futures::stream::iter(frames);
         let json = aggregate(stream, "deepseek-expert".into(), vec![], 0)
             .await
@@ -639,7 +642,8 @@ mod tests {
 
     #[tokio::test]
     async fn aggregate_tool_calls_with_trailing_text() {
-        let tool_xml = r#"<tool_calls>[{"name": "get_weather", "arguments": {}}]</tool_calls> trailing text"#;
+        let tool_xml =
+            r#"<tool_calls>[{"name": "get_weather", "arguments": {}}]</tool_calls> trailing text"#;
         let frames = make_ds_stream(&[(tool_xml, "RESPONSE")], None);
         let stream = futures::stream::iter(frames);
         let json = aggregate(stream, "deepseek-default".into(), vec![], 0)
@@ -659,9 +663,7 @@ mod tests {
         assert_eq!(completion["choices"][0]["finish_reason"], "tool_calls");
     }
 
-    async fn try_create_adapter(
-        path: &str,
-    ) -> Option<crate::openai_adapter::OpenAIAdapter> {
+    async fn try_create_adapter(path: &str) -> Option<crate::openai_adapter::OpenAIAdapter> {
         let p = std::path::Path::new(path);
         if !p.exists() {
             eprintln!("Config not found: {path}");
@@ -894,11 +896,9 @@ mod tests {
 
     #[tokio::test]
     async fn stream_fragmented_tool_calls_with_thinking() {
-        let tool_xml = r#"<tool_calls>[{"name": "get_weather", "arguments": {"city": "北京"}}]</tool_calls>"#;
-        let frames = make_ds_stream(
-            &[("思考中", "THINK"), (tool_xml, "RESPONSE")],
-            None,
-        );
+        let tool_xml =
+            r#"<tool_calls>[{"name": "get_weather", "arguments": {"city": "北京"}}]</tool_calls>"#;
+        let frames = make_ds_stream(&[("思考中", "THINK"), (tool_xml, "RESPONSE")], None);
         let bytes_stream = futures::stream::iter(frames);
         let chunks = collect_chunks(super::stream(
             bytes_stream,
@@ -1088,7 +1088,10 @@ mod tests {
     async fn stream_tool_calls_with_leading_text_fragmented() {
         let tool_xml = r#"<tool_calls>[{"name": "astrbot_execute_shell", "arguments": {"command": "cat /data/astrbot/skills/doubao-image-gen/SKILL.md"}}]</tool_calls>"#;
         let frames = make_ds_stream(
-            &[("好的，我来帮你用豆包生成图片。", "RESPONSE"), (tool_xml, "RESPONSE")],
+            &[
+                ("好的，我来帮你用豆包生成图片。", "RESPONSE"),
+                (tool_xml, "RESPONSE"),
+            ],
             None,
         );
         let bytes_stream = futures::stream::iter(frames);
@@ -1230,10 +1233,7 @@ mod tests {
     #[tokio::test]
     async fn stream_tool_calls_json_split_right_after_tag() {
         let tool_xml = r#"<tool_calls>[{"name": "f", "arguments": {}}]</tool_calls>"#;
-        let frames = make_ds_stream(
-            &[("好的。", "RESPONSE"), (tool_xml, "RESPONSE")],
-            None,
-        );
+        let frames = make_ds_stream(&[("好的。", "RESPONSE"), (tool_xml, "RESPONSE")], None);
         let bytes_stream = futures::stream::iter(frames);
         let chunks = collect_chunks(super::stream(
             bytes_stream,

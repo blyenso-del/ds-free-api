@@ -203,8 +203,7 @@ impl DsState {
 }
 
 pin_project! {
-    #[allow(unused_doc_comments)]
-    /// 对 SSE 事件流应用 patch 状态机的包装流
+    // 对 SSE 事件流应用 patch 状态机的包装流
     pub struct StateStream<S> {
         #[pin]
         inner: S,

@@ -58,8 +58,7 @@ pub(crate) fn make_chunk(
 }
 
 pin_project! {
-    #[allow(unused_doc_comments)]
-    /// 将 DsFrame 增量帧映射为 OpenAI ChatCompletionChunk 的流转换器
+    // 将 DsFrame 增量帧映射为 OpenAI ChatCompletionChunk 的流转换器
     pub struct ConverterStream<S> {
         #[pin]
         inner: S,

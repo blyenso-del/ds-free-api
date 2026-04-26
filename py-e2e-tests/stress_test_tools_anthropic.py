@@ -1,41 +1,32 @@
 #!/usr/bin/env python3
-"""工具调用多轮对话压测脚本（Anthropic 协议版本）
+"""工具调用多轮对话压测（Anthropic 协议）
 
-与 OpenAI 版本对称，使用 Anthropic Messages API + SDK。
-
-流程（每轮）：
-  1. 发送用户消息（带工具定义）
-  2. 等待模型返回 tool_use
-  3. 模拟工具结果返回给模型
-  4. 等待模型基于工具结果生成最终回复
-  5. 验证各阶段输出是否符合预期
-
-使用方式：
-  uv run python py-e2e-tests/stress_test_tools_anthropic.py
-  uv run python py-e2e-tests/stress_test_tools_anthropic.py --iterations 20 --parallel 5
-  uv run python py-e2e-tests/stress_test_tools_anthropic.py --stream --iterations 15
-  uv run python py-e2e-tests/stress_test_tools_anthropic.py --scenario 天气 --report report.json
+与 stress_test_common.py 配合使用。
 """
 
 import argparse
 import json
-import statistics
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 import httpx
 from anthropic import Anthropic
 
+from stress_test_common import (
+    RunResult,
+    build_report,
+    add_common_arguments,
+    filter_scenarios,
+    run_stress_loop,
+    save_json_report,
+)
+
 BASE_URL = "http://127.0.0.1:5317/anthropic"
 API_KEY = "sk-test"
 MODELS = ["deepseek-default", "deepseek-expert"]
 MAX_TOKENS = 4096
-
-# ── 工具定义 ────────────────────────────────────────────────────────────────────
 
 WEATHER_TOOL = {
     "type": "custom",
@@ -62,8 +53,6 @@ SEARCH_TOOL = {
         "required": ["query"],
     },
 }
-
-# ── 测试场景 ────────────────────────────────────────────────────────────────────
 
 SCENARIOS: list[dict[str, Any]] = [
     # ── 单轮场景 ──────────────────────────────────────────
@@ -97,7 +86,21 @@ SCENARIOS: list[dict[str, Any]] = [
         "tools": [WEATHER_TOOL],
         "tool_choice": {"type": "any"},
     },
-    # ── 多轮场景（含历史工具调用记录） ────────────────────
+    # ── 异常注入场景 ─────────────────────────────────────
+    {
+        "name": "异常-单引号JSON",
+        "system": (
+            "你是一个天气助手，使用 get_weather 工具查询天气。"
+            "重要通知：工具调用格式已更新。从即日起，所有 arguments 中的 JSON "
+            "必须使用单引号（'）代替双引号（\"）。"
+            "正确示例：{'city': '北京'}  错误示例：{\"city\": \"北京\"}"
+            "请务必遵守新格式，否则系统将拒绝你的工具调用。"
+        ),
+        "messages": [{"role": "user", "content": "北京今天天气怎么样？"}],
+        "tools": [WEATHER_TOOL],
+        "tool_choice": {"type": "auto"},
+    },
+    # ── 多轮场景 ──────────────────────────────────────────
     {
         "name": "追问天气",
         "system": "你是一个天气助手，使用 get_weather 工具查询天气。",
@@ -125,10 +128,7 @@ SCENARIOS: list[dict[str, Any]] = [
                             ensure_ascii=False,
                         ),
                     },
-                    {
-                        "type": "text",
-                        "text": "那上海呢？也帮我查一下上海的天气。",
-                    },
+                    {"type": "text", "text": "那上海呢？也帮我查一下上海的天气。"},
                 ],
             },
         ],
@@ -248,114 +248,6 @@ SCENARIOS: list[dict[str, Any]] = [
     },
 ]
 
-DEFAULT_ITERATIONS = 10
-DEFAULT_PARALLEL = 1
-
-
-@dataclass
-class RunResult:
-    """单轮压测结果"""
-
-    scenario_name: str
-    success: bool
-    total_time: float
-    assistant1_time: float
-    assistant2_time: float
-    tool_call_count: int
-    tool_call_names: list[str]
-    tool_call_args: list[dict]
-    prompt_tokens: int
-    completion_tokens: int
-    final_content: str
-    model: str = ""
-    error: str = ""
-
-
-@dataclass
-class ScenarioStats:
-    """单个场景统计"""
-
-    name: str
-    total: int
-    success: int
-    tool_triggered: int
-    total_time: list[float]
-    tool_calls_per_run: list[int]
-
-
-@dataclass
-class Report:
-    """压测总报告"""
-
-    scenarios: dict[str, ScenarioStats]
-    all_results: list[RunResult]
-    start_time: str
-    end_time: str
-    config: dict
-
-    @property
-    def total(self) -> int:
-        return len(self.all_results)
-
-    @property
-    def success(self) -> int:
-        return sum(1 for r in self.all_results if r.success)
-
-    @property
-    def failed(self) -> int:
-        return self.total - self.success
-
-    def print(self):
-        rate = self.success / self.total * 100 if self.total else 0
-        all_times = [r.total_time for r in self.all_results]
-        success_times = [r.total_time for r in self.all_results if r.success]
-        all_tokens = [r.completion_tokens for r in self.all_results if r.completion_tokens > 0]
-        tool_call_counts = [r.tool_call_count for r in self.all_results]
-
-        print(f"\n{'=' * 64}")
-        print(f"  工具调用压测报告 (Anthropic)")
-        print(f"  开始: {self.start_time}")
-        print(f"  结束: {self.end_time}")
-        print(f"  模型: {', '.join(self.config.get('models', ['?']))}")
-        print(f"{'=' * 64}")
-        print(f"  总运行:          {self.total}")
-        print(f"  成功:            {self.success} ({rate:.1f}%)")
-        print(f"  失败:            {self.failed}")
-        print(f"  触发工具调用:    {sum(1 for r in self.all_results if r.tool_call_count > 0)}")
-        if success_times:
-            print(f"  成功平均耗时:     {statistics.mean(success_times):.2f}s")
-        if all_times:
-            print(f"  总平均耗时:       {statistics.mean(all_times):.2f}s")
-            print(f"  最大耗时:         {max(all_times):.2f}s")
-            print(f"  最小耗时:         {min(all_times):.2f}s")
-            print(f"  P50:              {statistics.median(all_times):.2f}s")
-            print(f"  P95:              {sorted(all_times)[int(len(all_times) * 0.95)]:.2f}s")
-        if all_tokens:
-            print(f"  平均 completion tokens: {statistics.mean(all_tokens):.0f}")
-        if tool_call_counts:
-            print(f"  平均 tool_calls / 轮:    {statistics.mean(tool_call_counts):.1f}")
-
-        print(f"\n{'─' * 64}")
-        print(f"  各场景统计:")
-        print(f"  {'场景':12s} {'总数':>5s} {'成功':>5s} {'成功率':>7s} {'触发工具':>8s} {'平均耗时':>8s}")
-        print(f"{'─' * 64}")
-        for name, ss in sorted(self.scenarios.items()):
-            trigger_rate = ss.tool_triggered / ss.total * 100
-            avg_t = statistics.mean(ss.total_time) if ss.total_time else 0
-            succ_rate = ss.success / ss.total * 100 if ss.total else 0
-            print(f"  {name:12s} {ss.total:5d} {ss.success:5d} {succ_rate:6.1f}% "
-                  f"{trigger_rate:6.1f}%  {avg_t:7.2f}s")
-        print(f"{'─' * 64}")
-        for i, r in enumerate(self.all_results):
-            status = "✓" if r.success else "✗"
-            tools = ",".join(r.tool_call_names) if r.tool_call_names else "-"
-            err = f"  ERR: {r.error}" if r.error else ""
-            model_short = r.model.replace("deepseek-", "ds-")
-            print(f"  #{i + 1:3d} [{status}] {model_short:10s} {r.scenario_name:10s} "
-                  f"{r.total_time:6.2f}s  tools={r.tool_call_count:2d}({tools:20s})  "
-                  f"tok={r.completion_tokens:5d}{err}")
-        print(f"{'=' * 64}\n")
-
 
 def check_server() -> bool:
     """检查服务器是否可用"""
@@ -380,19 +272,21 @@ def mock_tool_result(tool_use_id: str, name: str, input_args: dict) -> list[dict
     """根据工具调用生成模拟结果（Anthropic tool_result 格式）"""
     if name == "get_weather":
         city = input_args.get("city", "未知")
-        data = {
-            "city": city,
-            "temperature": "25°C",
-            "condition": "晴",
-            "humidity": "45%",
-            "wind": "东北风2级",
-            "air_quality": "良好",
-        }
         return [
             {
                 "type": "tool_result",
                 "tool_use_id": tool_use_id,
-                "content": json.dumps(data, ensure_ascii=False),
+                "content": json.dumps(
+                    {
+                        "city": city,
+                        "temperature": "25°C",
+                        "condition": "晴",
+                        "humidity": "45%",
+                        "wind": "东北风2级",
+                        "air_quality": "良好",
+                    },
+                    ensure_ascii=False,
+                ),
             }
         ]
 
@@ -403,23 +297,13 @@ def mock_tool_result(tool_use_id: str, name: str, input_args: dict) -> list[dict
                 "type": "tool_result",
                 "tool_use_id": tool_use_id,
                 "content": json.dumps(
-                    {
-                        "results": [
-                            {"title": f"关于 {query} 的推荐", "snippet": f"这是 {query} 的相关信息..."}
-                        ]
-                    },
+                    {"results": [{"title": f"关于 {query} 的推荐", "snippet": f"这是 {query} 的相关信息..."}]},
                     ensure_ascii=False,
                 ),
             }
         ]
 
-    return [
-        {
-            "type": "tool_result",
-            "tool_use_id": tool_use_id,
-            "content": json.dumps({"result": "ok"}),
-        }
-    ]
+    return [{"type": "tool_result", "tool_use_id": tool_use_id, "content": json.dumps({"result": "ok"})}]
 
 
 def extract_tool_uses(msg: Any) -> list[tuple[str, str, dict]]:
@@ -501,7 +385,6 @@ def run_scenario(
             )
 
         # ── Turn 2: 返回工具结果 → 期望最终回复 ──
-        # 构造 tool_result 消息
         tool_result_blocks: list[dict] = []
         for tu_id, tu_name, tu_input in tool_uses:
             tool_result_blocks.extend(mock_tool_result(tu_id, tu_name, tu_input))
@@ -511,20 +394,9 @@ def run_scenario(
 
         t2 = time.time()
         if use_stream:
-            msg2 = _stream_collect(
-                client,
-                model=model,
-                max_tokens=MAX_TOKENS,
-                messages=turn2_messages,
-                system=system or None,
-            )
+            msg2 = _stream_collect(client, model=model, max_tokens=MAX_TOKENS, messages=turn2_messages, system=system or None)
         else:
-            msg2 = client.messages.create(
-                model=model,
-                max_tokens=MAX_TOKENS,
-                messages=turn2_messages,
-                system=system or None,
-            )
+            msg2 = client.messages.create(model=model, max_tokens=MAX_TOKENS, messages=turn2_messages, system=system or None)
         assistant2_time = time.time() - t2
 
         total_input_tokens += msg2.usage.input_tokens
@@ -570,7 +442,6 @@ def run_scenario(
 
 def _stream_collect(client: Anthropic, **kwargs: Any) -> Any:
     """流式请求：收集 Anthropic stream events 并组装为 quasi-Message 对象"""
-    # 移除 max_tokens if None — 它可能在用户 kwargs 里带了 None
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     content_blocks: list[dict] = []
@@ -581,10 +452,9 @@ def _stream_collect(client: Anthropic, **kwargs: Any) -> Any:
 
     with client.messages.stream(**kwargs) as stream:
         for event in stream:
-            if event.type == "message_start":
-                if hasattr(event.message, "usage"):
-                    input_tokens = event.message.usage.input_tokens or 0
-                    output_tokens = event.message.usage.output_tokens or 0
+            if event.type == "message_start" and hasattr(event.message, "usage"):
+                input_tokens = event.message.usage.input_tokens or 0
+                output_tokens = event.message.usage.output_tokens or 0
             if event.type == "content_block_start":
                 if event.content_block.type == "tool_use":
                     current_tool_use = {
@@ -594,48 +464,35 @@ def _stream_collect(client: Anthropic, **kwargs: Any) -> Any:
                         "input": {},
                     }
                 elif event.content_block.type == "text":
-                    content_blocks.append(
-                        {"type": "text", "text": event.content_block.text or ""}
-                    )
+                    content_blocks.append({"type": "text", "text": event.content_block.text or ""})
             if event.type == "content_block_delta":
                 if event.delta.type == "input_json_delta" and current_tool_use is not None:
                     partial = event.delta.partial_json
                     if partial:
-                        # 累积累加 partial_json
                         current_tool_use["input"] = partial
-                if event.delta.type == "text_delta":
-                    if content_blocks and content_blocks[-1]["type"] == "text":
-                        content_blocks[-1]["text"] += event.delta.text
-            if event.type == "content_block_stop":
-                if current_tool_use is not None:
-                    try:
-                        parsed = json.loads(current_tool_use["input"]) if isinstance(current_tool_use["input"], str) else current_tool_use["input"]
-                        current_tool_use["input"] = parsed
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                    content_blocks.append(current_tool_use)
-                    current_tool_use = None
+                if event.delta.type == "text_delta" and content_blocks and content_blocks[-1]["type"] == "text":
+                    content_blocks[-1]["text"] += event.delta.text
+            if event.type == "content_block_stop" and current_tool_use is not None:
+                try:
+                    parsed = json.loads(current_tool_use["input"]) if isinstance(current_tool_use["input"], str) else current_tool_use["input"]
+                    current_tool_use["input"] = parsed
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                content_blocks.append(current_tool_use)
+                current_tool_use = None
             if event.type == "message_delta":
                 if hasattr(event.delta, "stop_reason"):
                     stop_reason = event.delta.stop_reason
                 if hasattr(event, "usage") and event.usage:
                     output_tokens = event.usage.output_tokens or output_tokens
 
-    # 组装 quasi-Message
     class FakeUsage:
-        input_tokens: int = 0
-        output_tokens: int = 0
-
         def __init__(self, inp: int, out: int):
             self.input_tokens = inp
             self.output_tokens = out
 
     class FakeBlock:
-        type: str
-        id: str = ""
-        name: str = ""
-        input: dict | None = None
-        text: str = ""
+        pass
 
     blocks: list[Any] = []
     for b in content_blocks:
@@ -650,10 +507,6 @@ def _stream_collect(client: Anthropic, **kwargs: Any) -> Any:
         blocks.append(fb)
 
     class FakeMessage:
-        content: list[Any]
-        usage: Any
-        stop_reason: str | None
-
         def __init__(self, content: list, usage: Any, stop_reason: str | None):
             self.content = content
             self.usage = usage
@@ -663,32 +516,6 @@ def _stream_collect(client: Anthropic, **kwargs: Any) -> Any:
         content=blocks,
         usage=FakeUsage(input_tokens, output_tokens),
         stop_reason=stop_reason,
-    )
-
-
-def build_report(results: list[RunResult], config: dict) -> Report:
-    scenes: dict[str, list[RunResult]] = {}
-    for r in results:
-        scenes.setdefault(r.scenario_name, []).append(r)
-
-    stats = {}
-    for sname, sresults in scenes.items():
-        stats[sname] = ScenarioStats(
-            name=sname,
-            total=len(sresults),
-            success=sum(1 for r in sresults if r.success),
-            tool_triggered=sum(1 for r in sresults if r.tool_call_count > 0),
-            total_time=[r.total_time for r in sresults],
-            tool_calls_per_run=[r.tool_call_count for r in sresults],
-        )
-
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return Report(
-        scenarios=stats,
-        all_results=results,
-        start_time=config.get("start_time", now_str),
-        end_time=now_str,
-        config=config,
     )
 
 
@@ -705,31 +532,18 @@ def main():
             "  %(prog)s --report result.json           # 输出 JSON 报告\n"
         ),
     )
-    parser.add_argument("--iterations", type=int, default=DEFAULT_ITERATIONS, help="每场景迭代次数")
-    parser.add_argument("--parallel", type=int, default=DEFAULT_PARALLEL, help="并行数")
-    parser.add_argument(
-        "--models", type=str, nargs="*", default=MODELS,
-        help=f"模型列表 (default: {' '.join(MODELS)})"
-    )
-    parser.add_argument("--scenario", type=str, default=None, help="仅运行指定场景（名称关键字匹配）")
-    parser.add_argument("--stream", action="store_true", help="使用流式 API（默认非流式）")
-    parser.add_argument("--report", type=str, default=None, help="输出 JSON 报告文件路径")
+    add_common_arguments(parser)
     args = parser.parse_args()
 
     if not check_server():
         print(f"[错误] 服务器不可用 ({BASE_URL})，请先启动: just e2e-serve")
         sys.exit(1)
 
-    scenarios = SCENARIOS
-    if args.scenario:
-        scenarios = [s for s in scenarios if args.scenario.lower() in s["name"].lower()]
-        if not scenarios:
-            print(f"[错误] 未找到匹配的场景: {args.scenario}")
-            sys.exit(1)
+    scenarios = filter_scenarios(SCENARIOS, args.scenario)
 
     client = _make_client()
     models = args.models or MODELS
-    all_count = len(scenarios) * len(models) * args.iterations
+
     config = {
         "models": models,
         "stream": args.stream,
@@ -738,72 +552,25 @@ def main():
         "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
+    total_count = len(scenarios) * len(models) * args.iterations
     print(f"\n工具调用压测 (Anthropic)")
     print(f"  模型: {', '.join(models)}")
     print(f"  模式: {'流式' if args.stream else '非流式'}")
     print(f"  场景: {len(scenarios)} 个 ({', '.join(s['name'] for s in scenarios)})")
     print(f"  迭代: {args.iterations} 次/场景/模型")
     print(f"  并行: {args.parallel}")
-    print(f"  总计: {all_count} 次请求\n")
+    print(f"  总计: {total_count} 次请求\n")
 
-    all_results: list[RunResult] = []
+    all_results = run_stress_loop(
+        run_scenario, client, scenarios, models,
+        args.iterations, args.parallel, args.stream,
+    )
 
-    with ThreadPoolExecutor(max_workers=args.parallel) as executor:
-        futures = []
-        for model in models:
-            for scenario in scenarios:
-                for i in range(args.iterations):
-                    futures.append(executor.submit(run_scenario, client, scenario, model, i, args.stream))
-
-        done = 0
-        for future in as_completed(futures):
-            done += 1
-            all_results.append(future.result())
-            if done % max(1, all_count // 10) == 0 or done == all_count:
-                print(f"  进度: {done}/{all_count} ({done * 100 // all_count}%)", end="\r", flush=True)
-
-    print(f"\n  完成!                                  ")
-
-    report = build_report(all_results, config)
+    report = build_report(all_results, config, title="工具调用压测报告 (Anthropic)")
     report.print()
 
     if args.report:
-        json_data = {
-            "config": config,
-            "summary": {
-                "total": report.total,
-                "success": report.success,
-                "failed": report.failed,
-                "success_rate": round(report.success / report.total * 100, 1),
-            },
-            "scenarios": {
-                name: {
-                    "total": ss.total,
-                    "success": ss.success,
-                    "tool_triggered": ss.tool_triggered,
-                    "avg_time": round(statistics.mean(ss.total_time), 3),
-                    "max_time": round(max(ss.total_time), 3),
-                    "min_time": round(min(ss.total_time), 3),
-                    "avg_tool_calls": round(statistics.mean(ss.tool_calls_per_run), 1),
-                }
-                for name, ss in report.scenarios.items()
-            },
-            "runs": [
-                {
-                    "scenario": r.scenario_name,
-                    "success": r.success,
-                    "total_time": round(r.total_time, 3),
-                    "tool_call_count": r.tool_call_count,
-                    "tool_call_names": r.tool_call_names,
-                    "completion_tokens": r.completion_tokens,
-                    "error": r.error,
-                }
-                for r in all_results
-            ],
-        }
-        with open(args.report, "w", encoding="utf-8") as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=2)
-        print(f"  JSON 报告已输出: {args.report}")
+        save_json_report(report, args.report)
 
 
 if __name__ == "__main__":
