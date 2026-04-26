@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.4] - 2026-04-26
+
+### Added
+- **限流自动检测与指数退避重试**：ds_core 在发送流给 adapter 前先消费前两个 SSE 事件，
+  检测到 `hint` + `rate_limit_reached` 时返回 `CoreError::Overloaded`，
+  `try_chat()` 以 1s→2s→4s→8s→16s 指数间隔自动重试（最多 6 次），session 状态不受污染
+- **`stop_stream` 端点集成**：添加 `DsClient::stop_stream()` 方法，在 `GuardedStream` 的
+  `PinnedDrop` 中当流被提前丢弃时自动调用，通知 DeepSeek 端停止生成
+- **动态 message_id 追踪**：从 SSE `ready` 事件中解析 `request_message_id` 和
+  `response_message_id`，支持同一 session 内多次编辑，替代硬编码值
+- **SessionInfo 结构**：将 `sessions` 从 `HashMap<String, String>` 升级为
+  `RwLock<HashMap<String, SessionInfo>>`，每个 session 独立追踪 `next_message_id`
+- **`finished` 标记**：`GuardedStream` 仅在流未自然完成时触发 `stop_stream`，
+  正常完成不再发送停止信号
+- **工具调用自修复（live model fallback）**：当 tool_calls XML 解析失败时，
+  使用 DeepSeek 模型自身修复损坏的 JSON，提升工具调用稳定性
+- **e2e 测试按阶段重组**：`smoke` → `protocol` → `tools` → `stress` 渐进式流程，
+  支持 `just e2e-smoke` / `e2e-protocol` / `e2e-tools` / `e2e-stress`
+- **注册 pytest `requires_server` 标记**：消除自定义 mark 警告
+
+### Changed
+- `Account::session_id()` 返回 `Option<String>` 替代 `Option<&str>`，适配内部锁
+- 账号分配日志从 `info` 降为 `debug` 级别
+- SSE trace 日志精简为单行 `<event> <data>` 格式
+- 空内容警告不再误报工具调用场景（`has_tool_calls=true` 时跳过）
+- `justfile` 中 e2e 各阶段统一使用 `-n 4` 并发
+- 更新中英文 README，增加限流处理与并发策略说明
+- 更新 `docs/deepseek-api-reference.md`：添加 `stop_stream` 端点及 message_id 实际模式
+
+### Removed
+- 移除 `examples/adapter_cli/` 中冗余的 allow 注释
+
+### Stress Test Results
+- **4 账号 + 4 并发**：58 个 e2e 测试全部通过，耗时 83s
+- **1 账号 + 1 并发**：指数退避机制下同样 58/58 全部通过（耗时 323s）
+
 ## [0.2.3] - 2026-04-24
 
 ### Added

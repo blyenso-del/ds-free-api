@@ -3,8 +3,8 @@
 //! 1 account = 1 session = 1 concurrency。多并发需横向扩展账号数。
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use crate::config::Account as AccountConfig;
@@ -21,11 +21,17 @@ pub struct AccountStatus {
     pub mobile: String,
 }
 
+/// 单个 session 的状态：ID + 下次 edit_message 的 message_id
+struct SessionInfo {
+    id: String,
+    next_message_id: i64,
+}
+
 pub struct Account {
     token: String,
     email: String,
     mobile: String,
-    sessions: HashMap<String, String>,
+    sessions: RwLock<HashMap<String, SessionInfo>>,
     is_busy: AtomicBool,
     /// 账号最近一次释放的时间戳（ms），用于冷却判断
     last_released: AtomicI64,
@@ -36,8 +42,27 @@ impl Account {
         &self.token
     }
 
-    pub fn session_id(&self, model_type: &str) -> Option<&str> {
-        self.sessions.get(model_type).map(|s| s.as_str())
+    pub fn session_id(&self, model_type: &str) -> Option<String> {
+        self.sessions
+            .read()
+            .unwrap()
+            .get(model_type)
+            .map(|s| s.id.clone())
+    }
+
+    pub fn next_message_id(&self, model_type: &str) -> i64 {
+        self.sessions
+            .read()
+            .unwrap()
+            .get(model_type)
+            .map(|s| s.next_message_id)
+            .unwrap_or(1)
+    }
+
+    pub fn set_next_message_id(&self, model_type: &str, id: i64) {
+        if let Some(s) = self.sessions.write().unwrap().get_mut(model_type) {
+            s.next_message_id = id;
+        }
     }
 
     pub fn is_busy(&self) -> bool {
@@ -203,12 +228,15 @@ impl AccountPool {
                 let token = account.token().to_string();
                 account
                     .sessions
+                    .read()
+                    .unwrap()
                     .values()
+                    .map(|s| s.id.clone())
                     .map(move |session_id| {
                         let client = client.clone();
                         let token = token.clone();
                         async move {
-                            if let Err(e) = client.delete_session(&token, session_id).await {
+                            if let Err(e) = client.delete_session(&token, &session_id).await {
                                 warn!(
                                     target: "ds_core::accounts",
                                     "清理 session 失败 ({}): {}",
@@ -306,8 +334,16 @@ async fn try_init_account(
         };
         client.update_title(&token, &title_payload).await?;
 
-        sessions.insert(model_type.clone(), session_id);
+        sessions.insert(
+            model_type.clone(),
+            SessionInfo {
+                id: session_id,
+                next_message_id: 1,
+            },
+        );
     }
+
+    let sessions = RwLock::new(sessions);
 
     Ok(Account {
         token,

@@ -6,6 +6,8 @@ use std::task::{Context, Poll};
 use futures::Stream;
 use pin_project_lite::pin_project;
 
+use log::warn;
+
 use crate::openai_adapter::OpenAIAdapterError;
 
 use super::sse_parser::SseEvent;
@@ -136,6 +138,20 @@ impl DsState {
             "response/status" => {
                 if let Some(s) = val.as_str() {
                     self.status = Some(s.to_string());
+                    if s == "FINISHED" {
+                        let has_response = self
+                            .fragments
+                            .iter()
+                            .any(|f| f.ty == "RESPONSE" && !f.content.is_empty());
+                        if !has_response {
+                            warn!(
+                                target: "adapter",
+                                "状态机 FINISHED 但无 RESPONSE 内容: fragments={:?}, status={:?}, accumulated_token_usage={:?}",
+                                self.fragments.iter().map(|f| format!("{}/{}", f.ty, f.content.len())).collect::<Vec<_>>(),
+                                self.status, self.accumulated_token_usage
+                            );
+                        }
+                    }
                     frames.push(DsFrame::Status(s.to_string()));
                 }
             }

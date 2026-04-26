@@ -79,19 +79,20 @@ impl OpenAIAdapter {
         ))
     }
 
-    /// 内部辅助：对 `Overloaded` 进行短延迟轮询重试，降低瞬时并发峰值导致的失败率
+    /// 内部辅助：对 `Overloaded` 进行指数退避重试
     pub(crate) async fn try_chat(
         &self,
         req: crate::ds_core::ChatRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, CoreError>> + Send>>, CoreError> {
-        const MAX_RETRIES: usize = 3;
-        const RETRY_DELAY_MS: u64 = 200;
+        const MAX_RETRIES: usize = 6;
+        const BASE_DELAY_MS: u64 = 1000;
 
         for attempt in 0..MAX_RETRIES {
             match self.ds_core.v0_chat(req.clone()).await {
                 Ok(stream) => return Ok(Box::pin(stream)),
                 Err(CoreError::Overloaded) if attempt + 1 < MAX_RETRIES => {
-                    tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS)).await;
+                    let delay = BASE_DELAY_MS * (1 << attempt);
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
                 }
                 Err(e) => return Err(e),
             }

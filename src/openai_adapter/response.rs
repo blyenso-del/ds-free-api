@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
-use log::debug;
+use log::{debug, warn};
 use pin_project_lite::pin_project;
 use rand::RngExt;
 use std::future::Future;
@@ -460,7 +460,12 @@ where
     };
 
     let has_tool_calls = tool_calls.is_some();
-    let message_content = if content.is_empty() {
+    let message_content = if content.is_empty() && !has_tool_calls {
+        warn!(
+            target: "adapter",
+            "聚合响应内容为空: model={}, finish_reason={:?}, has_tool_calls={}, usage={:?}",
+            model, finish_reason, tool_calls.is_some(), usage
+        );
         None
     } else {
         Some(content)

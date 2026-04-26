@@ -55,7 +55,13 @@ RUST_LOG=debug ./ds-free-api
 
 Required fields only. One account = one concurrency slot.
 
-> **Concurrency tip**: DeepSeek has an implicit rate limit per session — each request needs about one request cycle of rest before the next use. **Stable safe concurrency ≈ accounts ÷ 2** (e.g., 4 accounts → 2 concurrent). Exceeding this ratio may cause empty responses due to rate limiting.
+> **Concurrency**: DeepSeek's free API enforces rate limits per session (`Messages too frequent. Try again later.`). This project includes built-in mechanisms for stable operation:
+> - **Auto rate-limit detection**: Monitors SSE `hint` events for `rate_limit_reached` signals
+> - **Exponential backoff retry**: Automatically retries with 1s→2s→4s→8s→16s intervals (up to 6 attempts)
+> - **Smart `stop_stream`**: Only fires on client disconnect, skipped on normal completion — prevents request conflicts
+> - **Dynamic message_id tracking**: Parses real session IDs from SSE `ready` events, supporting multiple edits within the same session
+>
+> Verified: 4 accounts + 4 concurrent workers (`-n 4`) pass all 58 e2e tests consistently. A single account can also pass all tests thanks to the retry mechanism.
 
 ```toml
 [server]

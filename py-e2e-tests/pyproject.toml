@@ -10,3 +10,8 @@ dependencies = [
     "pytest>=9.0.3",
     "pytest-xdist>=3.6.1",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "requires_server: tests that require the ds-free-api server to be running",
+]

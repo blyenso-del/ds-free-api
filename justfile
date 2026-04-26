@@ -29,22 +29,22 @@ serve *ARGS:
   cargo run -- "$@"
 
 # Run Python e2e tests (requires server running on port 5317; will skip with hint if not)
-# -n 2: 并发测试（DeepSeek 免费 API 不支持更高并发，4 workers 会触发大量空响应）
+# -n 4: 稳定并发（已验证 4 账号 + 指数退避重试可稳定通过）
 # 按文件过滤：just e2e openai_endpoint/test_smoke.py
 e2e *ARGS:
-  cd py-e2e-tests && uv run python -m pytest -n 2 "$@"
+  cd py-e2e-tests && uv run python -m pytest -n 4 "$@"
 
 # Stage 1 — Smoke: 服务在线、认证、模型列表、基础对话
 e2e-smoke:
-  cd py-e2e-tests && uv run python -m pytest openai_endpoint/test_smoke.py anthropic_endpoint/test_smoke.py -n 2 -v
+  cd py-e2e-tests && uv run python -m pytest openai_endpoint/test_smoke.py anthropic_endpoint/test_smoke.py -n 4 -v
 
 # Stage 2 — Protocol: reasoning/search/stop/system/stream/兼容字段
 e2e-protocol:
-  cd py-e2e-tests && uv run python -m pytest openai_endpoint/test_protocol.py anthropic_endpoint/test_protocol.py -n 2 -v
+  cd py-e2e-tests && uv run python -m pytest openai_endpoint/test_protocol.py anthropic_endpoint/test_protocol.py -n 4 -v
 
 # Stage 3 — Tools: 工具调用全路径 + 自修复注入
 e2e-tools:
-  cd py-e2e-tests && uv run python -m pytest openai_endpoint/test_tools.py anthropic_endpoint/test_tools.py -n 2 -v
+  cd py-e2e-tests && uv run python -m pytest openai_endpoint/test_tools.py anthropic_endpoint/test_tools.py -n 4 -v
 
 # Stress: 多场景多轮压测（merge gate，push 前可选）
 e2e-stress *ARGS:
