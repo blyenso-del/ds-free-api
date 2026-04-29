@@ -26,6 +26,8 @@ A proxy that translates free DeepSeek web chat into standard OpenAI and Anthropi
 - **Zero-cost API proxy**: Uses DeepSeek's free web interface — no API key required, compatible with OpenAI / Anthropic clients
 - **Dual protocol**: OpenAI Chat Completions and Anthropic Messages API, drop-in replacement for mainstream clients
 - **Tool calling ready**: Full OpenAI function calling with XML parsing + 3-layer self-repair pipeline (text → JSON → model fallback), covering 10+ malformed output patterns
+- **File upload ready**: Supports OpenAI `file` / `image_url` content parts and Anthropic `image` / `document` content blocks — inline data URLs are automatically uploaded to the DeepSeek session;
+  HTTP URLs trigger web search mode so the model can directly access the link
 - **Rust implementation**: Single binary + single TOML config, native cross-platform performance
 - **Multi-account pool**: Most-idle-first rotation, horizontal scalability for concurrency
 
@@ -133,6 +135,21 @@ The Anthropic compatibility layer uses the same model IDs via `/anthropic/v1/mes
 
 - **Reasoning**: Enabled by default. Set `"reasoning_effort": "none"` in the request body to disable.
 - **Web search**: Disabled by default. Set `"web_search_options": {"search_context_size": "high"}` to enable.
+- **File upload**: Supports inline data URLs (automatically uploaded to the DeepSeek session) and HTTP URLs (triggers web search mode):
+
+  **OpenAI:**
+  ```json
+  {"type": "file", "file": {"file_data": "data:text/plain;base64,...", "filename": "doc.txt"}}
+  {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+  {"type": "image_url", "image_url": {"url": "https://example.com/img.jpg"}}
+  ```
+
+  **Anthropic:**
+  ```json
+  {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "..."}}
+  {"type": "document", "source": {"type": "base64", "media_type": "text/plain", "data": "..."}}
+  {"type": "image", "source": {"type": "url", "url": "https://example.com/img.jpg"}}
+  ```
 
 ## Development
 
@@ -340,8 +357,8 @@ Scenarios are organized by type in `scenarios/`:
 py-e2e-tests/
 ├── scenarios/
 │   ├── basic/
-│   │   ├── openai/         # 7 basic scenarios (chat, reasoning, streaming, tool calls, etc.)
-│   │   └── anthropic/      # 3 basic scenarios (chat, reasoning, tool calls)
+│   │   ├── openai/         # 10 basic scenarios (chat, reasoning, streaming, tool calls, file upload, image upload, HTTP link, etc.)
+│   │   └── anthropic/      # 6 basic scenarios (chat, reasoning, tool calls, document upload, image upload, HTTP link)
 │   └── repair/             # 10 malformed tool call scenarios
 ├── runner.py               # Single-run entry point
 ├── stress_runner.py        # Multi-iteration stress test entry point
@@ -367,6 +384,50 @@ Each scenario is a standalone JSON file with request parameters and validation r
     "no_error": true
   }
 }
+```
+
+### e2e CLI Options
+
+**`just e2e-basic` and `just e2e-repair` (single run):**
+
+| Option | Description |
+|--------|-------------|
+| `scenario_dir` | Scenario directory, e.g. `scenarios/basic` or `scenarios/repair` |
+| `--endpoint` | Filter by endpoint: `openai` / `anthropic` |
+| `--model` | Filter by model: `deepseek-default` / `deepseek-expert` |
+| `--filter` | Filter by keyword(s) in scenario name (space-separated, e.g. `--filter file image`) |
+| `--parallel` | Concurrency, default `accounts ÷ 2` |
+| `--show-output` | Show model response summaries, tool calls, and finish reasons |
+| `--report` | Output JSON report path |
+
+**`just e2e-stress` (stress test):**
+
+| Option | Description |
+|--------|-------------|
+| `--iterations` | Iterations per scenario, default 3 |
+| `--models` | Filter by model list |
+| `--filter` | Filter by keyword(s) in scenario name (space-separated) |
+| `--parallel` | Concurrency, default `accounts ÷ 2 + 1` |
+| `--show-output` | Show model output |
+| `--report` | Output JSON report path |
+
+Examples:
+
+```bash
+# Quick verification of file/image upload scenarios
+just e2e-basic --filter file image --show-output
+
+# OpenAI endpoint only, expert model
+just e2e-basic --endpoint openai --model deepseek-expert
+
+# Sequential debugging
+just e2e-basic --endpoint openai --parallel 1 --show-output
+
+# Stress test: tool repair scenarios × 5 iterations
+just e2e-stress --filter repair --iterations 5
+
+# Output JSON report
+just e2e-basic --report result.json
 ```
 
 **Recommended**: Run e2e tests before submitting a PR.

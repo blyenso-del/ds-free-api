@@ -7,9 +7,9 @@ use crate::anthropic_compat::types::{
     ThinkingConfig, ToolChoice, ToolResultContent, ToolUnion,
 };
 use crate::openai_adapter::types::{
-    ChatCompletionsRequest, ContentPart, FunctionCall, FunctionDefinition, ImageUrlContent,
-    Message, MessageContent as OaiMessageContent, NamedFunction, NamedToolChoice, ResponseFormat,
-    StopSequence, Tool, ToolCall, ToolChoice as OaiToolChoice,
+    ChatCompletionsRequest, ContentPart, FileContent, FunctionCall, FunctionDefinition,
+    ImageUrlContent, Message, MessageContent as OaiMessageContent, NamedFunction, NamedToolChoice,
+    ResponseFormat, StopSequence, Tool, ToolCall, ToolChoice as OaiToolChoice,
 };
 
 // ============================================================================
@@ -170,6 +170,7 @@ fn assistant_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
             ContentBlock::Thinking { .. }
             | ContentBlock::RedactedThinking { .. }
             | ContentBlock::Image { .. }
+            | ContentBlock::Document { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Other => {}
         }
@@ -197,10 +198,31 @@ fn assistant_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
     }]
 }
 
+struct FilePart {
+    data_url: String,
+    filename: String,
+}
+
+fn infer_doc_filename(mime: &str) -> String {
+    let ext = match mime {
+        "application/pdf" => "pdf",
+        "text/plain" => "txt",
+        "text/html" => "html",
+        "application/json" => "json",
+        "application/zip" => "zip",
+        "application/xml" => "xml",
+        "text/csv" => "csv",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
+        _ => "doc",
+    };
+    format!("document.{}", ext)
+}
+
 /// 将 user 的 content blocks 映射为 OpenAI 消息
 fn user_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
     let mut text_parts = Vec::new();
     let mut image_parts = Vec::new();
+    let mut file_parts: Vec<FilePart> = Vec::new();
     let mut tool_results = Vec::new();
 
     for block in blocks {
@@ -215,6 +237,23 @@ fn user_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
                 };
                 image_parts.push(url);
             }
+            ContentBlock::Document { source, title } => match source {
+                ImageSource::Base64 { data, media_type } => {
+                    let data_url = format!("data:{};base64,{}", media_type, data);
+                    let filename = infer_doc_filename(media_type);
+                    let desc = title
+                        .as_deref()
+                        .filter(|t| !t.is_empty())
+                        .unwrap_or(&filename);
+                    text_parts.push(format!("[文件: {}]", desc));
+                    file_parts.push(FilePart { data_url, filename });
+                }
+                ImageSource::Url { url } => {
+                    // 利用 image_url part + HTTP URL 触发搜索模式
+                    // format_part 会输出 [请访问这个链接: {url}]
+                    image_parts.push(url.clone());
+                }
+            },
             ContentBlock::ToolResult {
                 tool_use_id,
                 content,
@@ -244,8 +283,8 @@ fn user_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
 
     let mut result = Vec::new();
 
-    // 文本 + 图片合并为一个 user message
-    if !text_parts.is_empty() || !image_parts.is_empty() {
+    // 文本 + 图片 + 文件合并为一个 user message
+    if !text_parts.is_empty() || !image_parts.is_empty() || !file_parts.is_empty() {
         if image_parts.is_empty() {
             result.push(empty_message(
                 "user".to_string(),
@@ -274,6 +313,20 @@ fn user_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
                     }),
                     input_audio: None,
                     file: None,
+                    refusal: None,
+                });
+            }
+            for fp in &file_parts {
+                parts.push(ContentPart {
+                    ty: "file".to_string(),
+                    text: None,
+                    image_url: None,
+                    input_audio: None,
+                    file: Some(FileContent {
+                        file_data: Some(fp.data_url.clone()),
+                        file_id: None,
+                        filename: Some(fp.filename.clone()),
+                    }),
                     refusal: None,
                 });
             }
@@ -646,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_content_blocks_skipped() {
+    fn document_url_mapped_to_image_url() {
         let body = br#"{
             "model": "deepseek-default",
             "messages": [
@@ -654,7 +707,7 @@ mod tests {
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "Hello"},
-                        {"type": "document", "source": {"type": "url", "url": "http://example.com"}}
+                        {"type": "document", "source": {"type": "url", "url": "http://example.com/doc"}}
                     ]
                 }
             ],
@@ -662,10 +715,19 @@ mod tests {
         }"#;
 
         let req = convert(body);
-        assert_eq!(
-            req.messages[0].content,
-            Some(OaiMessageContent::Text("Hello".to_string()))
-        );
+        match &req.messages[0].content {
+            Some(OaiMessageContent::Parts(parts)) => {
+                assert_eq!(parts.len(), 2);
+                assert_eq!(parts[0].ty, "text");
+                assert_eq!(parts[0].text.as_deref(), Some("Hello"));
+                assert_eq!(parts[1].ty, "image_url");
+                assert_eq!(
+                    parts[1].image_url.as_ref().unwrap().url,
+                    "http://example.com/doc"
+                );
+            }
+            other => panic!("expected Parts, got {:?}", other),
+        }
     }
 
     #[test]

@@ -94,6 +94,11 @@ pub enum ContentBlock {
     Image {
         source: ImageSource,
     },
+    Document {
+        source: ImageSource,
+        #[serde(default)]
+        title: Option<String>,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -115,7 +120,7 @@ pub enum ContentBlock {
         #[allow(dead_code)]
         data: String,
     },
-    // 其他类型（document / search_result / server_tool_use 等）直接忽略
+    // 其他类型（search_result / server_tool_use 等）直接忽略
     #[serde(other)]
     Other,
 }

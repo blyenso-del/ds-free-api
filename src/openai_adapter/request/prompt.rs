@@ -190,12 +190,16 @@ fn format_part(part: &ContentPart) -> String {
         "text" => part.text.clone().unwrap_or_default(),
         "refusal" => part.refusal.clone().unwrap_or_default(),
         "image_url" => {
-            let detail = part
-                .image_url
-                .as_ref()
-                .and_then(|i| i.detail.as_deref())
-                .unwrap_or("auto");
-            format!("[图片: detail={detail}]")
+            if let Some(img) = &part.image_url {
+                if img.url.starts_with("http://") || img.url.starts_with("https://") {
+                    format!("[请访问这个链接: {}]", img.url)
+                } else {
+                    let detail = img.detail.as_deref().unwrap_or("auto");
+                    format!("[图片: detail={detail}]")
+                }
+            } else {
+                "[图片]".to_string()
+            }
         }
         "input_audio" => {
             let fmt = part
@@ -211,7 +215,11 @@ fn format_part(part: &ContentPart) -> String {
                 .as_ref()
                 .and_then(|f| f.filename.as_deref())
                 .unwrap_or("unknown");
-            format!("[文件: filename={filename}]")
+            let desc = part.text.as_deref().filter(|t| !t.is_empty());
+            match desc {
+                Some(d) => format!("[文件: {d} (filename={filename})]"),
+                None => format!("[文件: filename={filename}]"),
+            }
         }
         _ => format!("[未支持的内容类型: {}]", part.ty),
     }

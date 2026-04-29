@@ -118,12 +118,13 @@ impl OpenAIAdapter {
             .map(|bpe| bpe.encode_with_special_tokens(&prompt).len() as u32)
             .unwrap_or(0);
 
+        let file_result = request::files::extract(&req);
         let chat_req = crate::ds_core::ChatRequest {
             prompt,
             thinking_enabled: model_res.thinking_enabled,
-            search_enabled: model_res.search_enabled,
+            search_enabled: model_res.search_enabled || file_result.has_http_urls,
             model_type: model_res.model_type,
-            files: vec![],
+            files: file_result.files,
         };
 
         let chat_resp = self.try_chat(chat_req, request_id).await?;

@@ -13,6 +13,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - **Prompt 注入调研文档**：[`docs/deepseek-prompt-injection.md`](docs/deepseek-prompt-injection.md)，
   记录 DeepSeek 网页端原生标签（`<｜User｜>` / `<｜Assistant｜>` 等）的分析与注入策略调研过程
+- **OpenAI adapter 文件提取**：新增 `files.rs`，支持从 `file` / `image_url` content part 提取内联 data URL
+  为 `FilePayload` 自动上传到 DeepSeek 会话；HTTP URL 自动标记开启搜索模式
+- **Anthropic compat Document 支持**：`ContentBlock` 新增 `Document` 变体，
+  base64 文档映射为 OpenAI `file` content part 上传，URL 文档触发搜索模式
+- **e2e 文件上传测试场景**：新增 6 个场景（OpenAI 文件/图片/HTTP 链接 + Anthropic 文档/图片/HTTP 链接）
+
+### Changed
+- **`format_part` 改进**：`image_url` HTTP URL 输出 `[请访问这个链接: {url}]` 替代无意义占位符；
+  `file` content part 保留 `text` 描述字段
+- **`openai_adapter.rs`**：接入 `files::extract`，HTTP URL 时自动开启搜索模式
+- **`anthropic_compat/request.rs`**：`user_blocks_to_messages` 增加 `FilePart` 处理和 `infer_doc_filename`
+- **e2e 测试套件增强**：实时进度展示、`--show-output` 参数显示模型输出、`--filter` 支持多个关键词、
+  汇总表增加端点列、使用完整模型 ID
+- **README 中英文同步**：新增文件上传功能说明、能力开关示例、e2e CLI 参数文档
 
 ### Changed
 - **Prompt 格式重构**：从 ChatML（`<|im_start|>` / `<|im_end|>`）迁移到 DeepSeek 原生标签格式
