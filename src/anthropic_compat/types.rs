@@ -367,8 +367,6 @@ pub enum MessagesResponseChunk {
         stop_sequence: Option<String>,
         output_tokens: Option<u32>,
     },
-    /// SSE 保活 ping 事件
-    Ping,
     MessageStop,
 }
 
@@ -380,7 +378,6 @@ impl MessagesResponseChunk {
             Self::ContentBlockDelta { .. } => "content_block_delta",
             Self::ContentBlockStop { .. } => "content_block_stop",
             Self::MessageDelta { .. } => "message_delta",
-            Self::Ping => "ping",
             Self::MessageStop => "message_stop",
         }
     }
@@ -428,9 +425,6 @@ impl MessagesResponseChunk {
                 }
                 serde_json::to_string(&obj)?
             }
-            Self::Ping => serde_json::to_string(&serde_json::json!({
-                "type": "ping",
-            }))?,
             Self::MessageStop => serde_json::to_string(&serde_json::json!({
                 "type": "message_stop",
             }))?,
