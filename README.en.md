@@ -97,18 +97,14 @@ password = "pass1"
 
 ### Free Test Accounts
 
+All passwords are `test12345`.
+
 ```
-rivigol378@tatefarm.com
-test12345
-
-counterfeit1341@wplacetools.com
-test12345
-
 idyllic4202@wplacetools.com
-test12345
-
-slowly1285@wplacetools.com
-test12345
+espialeilani+grace@gmail.com
+ar.r.o.g.anc.e.p.c.hz.xp@gmail.com
+theobald2798+gladden@gmail.com
+vj.zh.z.h.d.b.b.d.udhj.db@gmail.com
 ```
 
 For more accounts, try temporary email services (some domains may not work) and register via the international version with a VPN.

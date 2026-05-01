@@ -194,9 +194,23 @@ impl Config {
     /// 从指定路径加载配置
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path)?;
-        let config: Self = toml::de::from_str(&content)?;
+        let mut config: Self = toml::de::from_str(&content)?;
+        config.dedup_accounts();
         config.validate()?;
         Ok(config)
+    }
+
+    /// 按 email（优先）或 mobile 去重，保留首次出现的账号
+    fn dedup_accounts(&mut self) {
+        let mut seen = std::collections::HashSet::new();
+        self.accounts.retain(|a| {
+            let key = if a.email.is_empty() {
+                a.mobile.clone()
+            } else {
+                a.email.clone()
+            };
+            seen.insert(key)
+        });
     }
 
     /// 解析命令行参数并加载配置

@@ -95,20 +95,14 @@ password = "pass1"
 > tool_call.extra_ends = ["<|tool_calls_end|>", "<|tool▁calls_end|>", "<|tool_calls▁end|>", "</tool_call>"]
 > ```
 
-这里分享几个免费的测试账号，不要发敏感信息（虽然程序每次会收尾删除会话，但是可能会遗留）。
+这里分享几个免费的测试账号，不要发敏感信息（虽然程序每次会收尾删除会话，但是可能会遗留）。密码统一为 `test12345`。
 
 ```text
-rivigol378@tatefarm.com
-test12345
-
-counterfeit1341@wplacetools.com
-test12345
-
 idyllic4202@wplacetools.com
-test12345
-
-slowly1285@wplacetools.com
-test12345
+espialeilani+grace@gmail.com
+ar.r.o.g.anc.e.p.c.hz.xp@gmail.com
+theobald2798+gladden@gmail.com
+vj.zh.z.h.d.b.b.d.udhj.db@gmail.com
 ```
 
 想要自己多整几个账号并发的话，可以研究一下临时邮箱（有些可能不行），然后加魔法在国际版中多注册几个账号。

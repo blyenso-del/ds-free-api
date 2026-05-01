@@ -28,6 +28,8 @@ jobs:
         uses: actions-rust-lang/audit@v1
       - name: cargo machete
         run: cargo install cargo-machete --locked && cargo machete
+      - name: cargo outdated
+        run: cargo install cargo-outdated --locked && cargo outdated --root-deps-only
 
   test:
     runs-on: ubuntu-latest
