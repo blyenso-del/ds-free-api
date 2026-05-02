@@ -23,6 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - **依赖升级**：wasmtime 43.0.0 → 44.0.0，修复安全通告 RUSTSEC-2026-0114
+- **inline prompt 瘦身**：`split_history_prompt` 改为只保留最后一个带 `<think>` 的 `<｜Assistant｜>` 块
+  作为 inline，其余全部进入 history 文件上传。避免工具调用结果超长导致输入超限
+- **工具调用标签模糊匹配**：新增 `norm_tag_char` / `fuzzy_match_tag`，全角 `｜`(U+FF5C)↔`|`、
+  `▁`(U+2581)↔`_` 自动模糊匹配，覆盖所有字符级幻觉变体。默认 extra 列表精简为格式完全不同
+  的回退标签：`<|tool_call_begin|>`、`<tool_calls>`、`<tool_call>`
 
 ### Fixed
 - **CI 幂等性**：`cargo install` 步骤添加 `command -v` 前置检查，避免缓存恢复后重复安装失败

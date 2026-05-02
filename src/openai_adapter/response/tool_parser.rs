@@ -46,22 +46,64 @@ impl TagConfig {
     }
 }
 
+/// 标签字符归一化：`｜`(U+FF5C) → `|`，`▁`(U+2581) → `_`
+fn norm_tag_char(c: char) -> char {
+    match c {
+        '\u{FF5C}' => '|',
+        '\u{2581}' => '_',
+        _ => c,
+    }
+}
+
+/// 标签字符等价判断
+fn eq_tag_char(a: char, b: char) -> bool {
+    a == b || norm_tag_char(a) == norm_tag_char(b)
+}
+
+/// 模糊匹配标签：在 `haystack` 中查找 `partial`，支持 `｜`↔`|`、`▁`↔`_` 等价
+fn fuzzy_match_tag<'a>(haystack: &'a str, partial: &str) -> Option<(usize, &'a str)> {
+    let n_chars: Vec<char> = partial.chars().collect();
+    let h_chars: Vec<char> = haystack.chars().collect();
+
+    if n_chars.is_empty() || h_chars.len() < n_chars.len() {
+        return None;
+    }
+
+    for start in 0..=h_chars.len() - n_chars.len() {
+        let mut matched = true;
+        for j in 0..n_chars.len() {
+            if !eq_tag_char(n_chars[j], h_chars[start + j]) {
+                matched = false;
+                break;
+            }
+        }
+        if matched {
+            let byte_pos: usize = h_chars[..start].iter().map(|c| c.len_utf8()).sum();
+            let tag_len: usize = h_chars[start..start + n_chars.len()]
+                .iter()
+                .map(|c| c.len_utf8())
+                .sum();
+            return Some((byte_pos, &haystack[byte_pos..byte_pos + tag_len]));
+        }
+    }
+    None
+}
+
 fn match_start_tag<'a>(s: &'a str, tag: &str) -> Option<(usize, &'a str)> {
     let partial = tag.trim_end_matches('>');
     if let Some(pos) = s.find(partial) {
         Some((pos, &s[pos..pos + partial.len()]))
     } else {
-        None
+        fuzzy_match_tag(s, partial)
     }
 }
 
 pub(crate) fn contains_start_tag_with(s: &str, cfg: &TagConfig) -> bool {
-    let partial = TOOL_CALL_START.trim_end_matches('>');
-    if s.contains(partial) {
+    if match_start_tag(s, TOOL_CALL_START).is_some() {
         return true;
     }
     for start in &cfg.starts {
-        if s.contains(start.trim_end_matches('>')) {
+        if match_start_tag(s, start).is_some() {
             return true;
         }
     }
@@ -94,6 +136,12 @@ pub(crate) fn find_end_tag_with<'a>(
             let abs = from + pos;
             return Some((abs, &s[abs..abs + close_tag.len()]));
         }
+        // 模糊回退：close_tag 中可能含 ｜/▁ 变体
+        let close_partial = close_tag.trim_end_matches('>');
+        if let Some((pos, _)) = fuzzy_match_tag(search, close_partial) {
+            let abs = from + pos;
+            return Some((abs, &s[abs..abs + close_partial.len()]));
+        }
     }
 
     // 无论 start_tag 是否提供，都尝试已知结束标签
@@ -101,6 +149,12 @@ pub(crate) fn find_end_tag_with<'a>(
         if let Some(pos) = search.find(end) {
             let abs = from + pos;
             return Some((abs, &s[abs..abs + end.len()]));
+        }
+        // 模糊回退
+        let end_partial = end.trim_end_matches('>');
+        if let Some((pos, _)) = fuzzy_match_tag(search, end_partial) {
+            let abs = from + pos;
+            return Some((abs, &s[abs..abs + end_partial.len()]));
         }
     }
     if let Some(st) = start_tag
@@ -124,12 +178,18 @@ fn is_start_tag(tag: &str, cfg: &TagConfig) -> bool {
         return false;
     }
     let partial = TOOL_CALL_START.trim_end_matches('>');
-    if partial.starts_with(tag) || tag.starts_with(partial) {
+    let tag_norm: String = tag.chars().map(norm_tag_char).collect();
+    let partial_norm: String = partial.chars().map(norm_tag_char).collect();
+    if partial_norm.starts_with(&tag_norm) || tag_norm.starts_with(&partial_norm) {
         return true;
     }
     for start in &cfg.starts {
-        let p = start.trim_end_matches('>');
-        if p.starts_with(tag) || tag.starts_with(p) {
+        let p: String = start
+            .trim_end_matches('>')
+            .chars()
+            .map(norm_tag_char)
+            .collect();
+        if p.starts_with(&tag_norm) || tag_norm.starts_with(&p) {
             return true;
         }
     }

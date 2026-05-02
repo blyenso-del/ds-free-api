@@ -88,11 +88,11 @@ area_code = ""
 password = "pass1"
 ```
 
-> **Tool call tag hallucination**: Primary tags are `<|tool▁calls▁begin|>` / `<|tool▁calls▁end|>`. If the model outputs hallucinated variants causing parse failures, add fallback tags in `config.toml` under `[deepseek]`:
+> **Tool call tag hallucination**: Built-in fuzzy matching (fullwidth `｜`(U+FF5C) ↔ `|`, `▁`(U+2581) ↔ `_`) handles most character-level variants automatically. If the model outputs a completely different tag format, add fallback tags in `config.toml` under `[deepseek]`:
 > ```toml
 > [deepseek]
-> tool_call.extra_starts = ["<ぺTool▁calls▁beginぺ>"]
-> tool_call.extra_ends = ["<ぺTool▁calls▁endぺ>"]
+> tool_call.extra_starts = ["<|tool_call_begin|>", "<tool_calls>", "<tool_call>"]
+> tool_call.extra_ends = ["<|tool_call_end|>", "</tool_calls>", "</tool_call>"]
 > ```
 
 ### Free Test Accounts

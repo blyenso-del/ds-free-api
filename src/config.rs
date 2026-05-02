@@ -73,13 +73,17 @@ pub struct DeepSeekConfig {
     pub tool_call: ToolCallTagConfig,
 }
 
-/// 工具调用自定义回退标签（内置 `<tool_calls>`，此处只加模型幻觉变体）
+/// 工具调用标签配置
+///
+/// 内置模糊匹配：`｜`(U+FF5C)↔`|`、`▁`(U+2581)↔`_`，自动覆盖大多数字符级幻觉变体。
+/// 此处配置的 extra 列表用于处理格式完全不同的标签（如 `<tool_call>`），
+/// 模糊匹配无法覆盖的情况。
 #[derive(Debug, Clone, Deserialize)]
 pub struct ToolCallTagConfig {
-    /// 回退开始标签列表（内置：`<tool_call>` / `<function>`，用户可追加）
+    /// 额外开始标签（内置 `<|tool▁calls▁begin|>` + 模糊匹配，此处只加格式完全不同的变体）
     #[serde(default = "default_tool_call_starts")]
     pub extra_starts: Vec<String>,
-    /// 回退结束标签列表（内置：`</tool_call>` / `</function>`，用户可追加）
+    /// 额外结束标签（内置 `<|tool▁calls▁end|>` + 模糊匹配，此处只加格式完全不同的变体）
     #[serde(default = "default_tool_call_ends")]
     pub extra_ends: Vec<String>,
 }
@@ -95,18 +99,16 @@ impl Default for ToolCallTagConfig {
 
 fn default_tool_call_starts() -> Vec<String> {
     vec![
-        "<|tool_calls_begin|>".into(),
-        "<|tool▁calls_begin|>".into(),
-        "<|tool_calls▁begin|>".into(),
+        "<|tool_call_begin|>".into(),
+        "<tool_calls>".into(),
         "<tool_call>".into(),
     ]
 }
 
 fn default_tool_call_ends() -> Vec<String> {
     vec![
-        "<|tool_calls_end|>".into(),
-        "<|tool▁calls_end|>".into(),
-        "<|tool_calls▁end|>".into(),
+        "<|tool_call_end|>".into(),
+        "</tool_calls>".into(),
         "</tool_call>".into(),
     ]
 }

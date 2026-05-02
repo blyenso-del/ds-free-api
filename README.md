@@ -87,11 +87,11 @@ area_code = ""
 password = "pass1"
 ```
 
-> **工具调用标签幻觉**：主标签为 `<|tool▁calls▁begin|>` / `<|tool▁calls▁end|>`。如果模型输出其他变体导致解析失败，可在 `config.toml` 的 `[deepseek]` 下追加回退标签：
+> **工具调用标签幻觉**：内置模糊匹配（全角 `｜`↔`|`、`▁`↔`_`），自动覆盖大多数字符级变体。如果模型输出格式完全不同的回退标签导致解析失败，可在 `config.toml` 的 `[deepseek]` 下追加：
 > ```toml
 > [deepseek]
-> tool_call.extra_starts = ["<|tool_calls_begin|>", "<|tool▁calls_begin|>", "<|tool_calls▁begin|>", "<tool_call>"]
-> tool_call.extra_ends = ["<|tool_calls_end|>", "<|tool▁calls_end|>", "<|tool_calls▁end|>", "</tool_call>"]
+> tool_call.extra_starts = ["<|tool_call_begin|>", "<tool_calls>", "<tool_call>"]
+> tool_call.extra_ends = ["<|tool_call_end|>", "</tool_calls>", "</tool_call>"]
 > ```
 
 这里分享几个免费的测试账号，不要发敏感信息（虽然程序每次会收尾删除会话，但是可能会遗留）。密码统一为 `test12345`。

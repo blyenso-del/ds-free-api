@@ -548,11 +548,39 @@ fn parse_native_blocks(prompt: &str) -> Vec<ChatBlock> {
 
 /// 拆分 prompt 为 inline_prompt 和 history_content
 ///
-/// 找到最后一个 user/tool 块，以其为界：
-/// - inline = 最后一个 user/tool 块 → 末尾（含其后的 assistant/<think> 等）
+/// 优先策略：找到最后一个带 `<think>` 的 `<｜Assistant｜>` 块，
+/// - inline = 仅该 assistant+think 块（包含工具提醒等）
 /// - history = 其余所有块，包装为 [file content end] … [file content begin] 格式上传
+///
+/// 无 think 块时（如无工具定义的简单对话），退回到原来基于 user/tool 的切分：
+/// - inline = 最后一个 user/tool 块 → 末尾
+/// - history = 其余块
 fn split_history_prompt(prompt: &str) -> (String, String) {
     let blocks = parse_native_blocks(prompt);
+
+    // 优先：找最后一个带 <think> 的 assistant 块，只保留该块 inline
+    if let Some(think_idx) = blocks
+        .iter()
+        .rposition(|b| b.role == "assistant" && b.content.contains("<think>"))
+    {
+        let mut inline = String::new();
+        inline.push_str(&role_tag(&blocks[think_idx].role));
+        inline.push_str(&blocks[think_idx].content);
+        inline.push('\n');
+
+        let mut history = String::new();
+        history.push_str("[file content end]\n\n");
+        for block in &blocks[..think_idx] {
+            history.push_str(&role_tag(&block.role));
+            history.push_str(&block.content);
+            history.push('\n');
+        }
+        history.push_str("[file name]: IGNORE\n[file content begin]\n");
+
+        return (inline, history);
+    }
+
+    // 无 think 块 → 原来基于 user/tool 的切分
     let split_idx = match blocks
         .iter()
         .rposition(|b| b.role == "user" || b.role == "tool")
