@@ -5,10 +5,11 @@
 //!
 //! 对外暴露最小接口：OpenAIAdapter, OpenAIAdapterError
 
-use bytes::Bytes;
-use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use std::sync::Arc;
+
+use bytes::Bytes;
+use futures::{Stream, StreamExt};
 
 use crate::ds_core::{CoreError, DeepSeekCore};
 
@@ -73,6 +74,7 @@ impl OpenAIAdapter {
         mut req: ChatCompletionsRequest,
         request_id: &str,
     ) -> Result<ChatResult<ChatOutput>, OpenAIAdapterError> {
+        log::debug!(target: "adapter", "req={} 适配器开始处理: model={}, stream={}", request_id, req.model, req.stream);
         use crate::openai_adapter::types::{
             FunctionCallOption, NamedFunction, NamedToolChoice, Tool, ToolChoice,
         };
@@ -199,14 +201,21 @@ impl OpenAIAdapter {
 
         for attempt in 0..MAX_RETRIES {
             match self.ds_core.v0_chat(req.clone(), request_id).await {
-                Ok(resp) => return Ok(resp),
+                Ok(resp) => {
+                    if attempt > 0 {
+                        log::info!(target: "adapter", "req={} 第 {} 次重试成功", request_id, attempt);
+                    }
+                    return Ok(resp);
+                }
                 Err(CoreError::Overloaded) if attempt + 1 < MAX_RETRIES => {
                     let delay = BASE_DELAY_MS * (1 << attempt);
+                    log::warn!(target: "adapter", "req={} Overloaded, 第 {} 次重试等待 {}ms", request_id, attempt + 1, delay);
                     tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
                 }
                 Err(e) => return Err(e),
             }
         }
+        log::warn!(target: "adapter", "req={} {} 次重试均失败，放弃", request_id, MAX_RETRIES);
         Err(CoreError::Overloaded)
     }
 

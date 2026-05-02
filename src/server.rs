@@ -6,6 +6,8 @@ mod error;
 mod handlers;
 mod stream;
 
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
     extract::Request,
@@ -14,7 +16,6 @@ use axum::{
     routing::{get, post},
 };
 use serde::Serialize;
-use std::sync::Arc;
 use tokio::net::TcpListener;
 
 use crate::anthropic_compat::AnthropicCompat;

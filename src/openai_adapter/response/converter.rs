@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 use futures::Stream;
 use pin_project_lite::pin_project;
 
-use log::trace;
+use log::{trace, warn};
 
 use crate::openai_adapter::OpenAIAdapterError;
 use crate::openai_adapter::types::{ChatCompletionsResponseChunk, ChunkChoice, Delta, Usage};
@@ -192,6 +192,9 @@ where
                 },
                 Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e))),
                 Poll::Ready(None) => {
+                    if !*this.finished {
+                        warn!(target: "adapter", "转换器流提前结束: model={}, usage_value={:?}", this.model, this.usage_value);
+                    }
                     if *this.finished
                         && *this.include_usage
                         && let Some(u) = this.usage_value.take()

@@ -7,13 +7,14 @@ use futures::Stream;
 use log::{debug, trace};
 use pin_project_lite::pin_project;
 
-use super::{finish_reason_map, map_id};
 use crate::anthropic_compat::AnthropicCompatError;
 use crate::anthropic_compat::types::{
     ContentBlockDelta, MessagesResponse, MessagesResponseChunk, ResponseContentBlock, Usage,
 };
 use crate::openai_adapter::OpenAIAdapterError;
 use crate::openai_adapter::types::ChatCompletionsResponseChunk;
+
+use super::{finish_reason_map, map_id};
 
 // ============================================================================
 // 状态机

@@ -16,17 +16,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **WAF 友好提示**：当检测到 AWS WAF Challenge 时，输出清晰的双语提示和解决方案说明，
   替代原有的 `error decoding response body` 无意义错误
 - **账号自动去重**：启动时自动按 email（优先）或 mobile 去重，重复配置的账号只会生效一次
+- **重试全链路日志**：`try_chat()` 每次 Overloaded 退避重试输出 WARN 日志（含尝试次数和等待时间），
+  重试成功输出 INFO 日志，全部失败输出 WARN 终结日志，便于诊断限流问题
+- **适配器入口日志**：`chat_completions()` 处理开始时输出模型和 stream 标志的 DEBUG 日志
+- **转换器提前结束检测**：DeepSeek 流在内容输出完毕前断开时输出 WARN 日志并附 usage 快照
 
 ### Changed
 - **依赖升级**：wasmtime 43.0.0 → 44.0.0，修复安全通告 RUSTSEC-2026-0114
 
 ### Fixed
 - **CI 幂等性**：`cargo install` 步骤添加 `command -v` 前置检查，避免缓存恢复后重复安装失败
+- **client.rs 日志违规**：`print_waf_hint()` 中 11 条 `warn!` 补全 `target: "ds_core::client"` 参数
+- **导入顺序合规**：`openai_adapter.rs`、`response.rs`、`accounts.rs`、`server.rs`、
+  `anthropic_compat/response/stream.rs` 中的导入分组按规范重排（std → 第三方 → crate → super）
 
 ### Docs
 - **Prompt injection 策略**：更新 README 中 DeepSeek 原生标签的注入策略说明，
   补充 `<｜Tool｜>` 标签的使用方式
-- **CLAUDE.md**：完善开发指南，修正 pre-commit hook 描述，补充日志过滤示例
+- **CLAUDE.md / AGENTS.md**：精简架构描述，新增故障排除表、请求追踪 grep 示例、`#[allow]` 仅在
+  `client.rs` 出现的策略说明
+- **logging-spec.md**：新增 adapter 层（入口、重试、转换器提前结束）和 ds_core 编排层代码示例，
+  补齐全管道日志级别映射
+- **code-style.md**：修复 `docs/logging.md` 断链；补充错误消息语言约定（用户界面中文/内部英文）
+  和枚举变体 PascalCase 约定
 
 ## [0.2.5] - 2026-04-30
 

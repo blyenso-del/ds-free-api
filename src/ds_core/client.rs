@@ -226,17 +226,17 @@ fn is_waf_challenge(resp: &reqwest::Response) -> bool {
 
 /// Print a hint when WAF challenge is detected
 fn print_waf_hint() {
-    warn!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    warn!("  AWS WAF Challenge detected.");
-    warn!("  DeepSeek CloudFront WAF blocks US-based IPs.");
-    warn!("  Rust HTTP clients can't execute the JS challenge.");
-    warn!("");
-    warn!("  To fix this, configure a non-US proxy in config.toml:");
-    warn!("    [proxy]");
-    warn!("    url = \"http://127.0.0.1:7890\"");
-    warn!("");
-    warn!("  https://github.com/niyue/ds-free-api");
-    warn!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    warn!(target: "ds_core::client", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    warn!(target: "ds_core::client", "  AWS WAF Challenge detected.");
+    warn!(target: "ds_core::client", "  DeepSeek CloudFront WAF blocks US-based IPs.");
+    warn!(target: "ds_core::client", "  Rust HTTP clients can't execute the JS challenge.");
+    warn!(target: "ds_core::client", "");
+    warn!(target: "ds_core::client", "  To fix this, configure a non-US proxy in config.toml:");
+    warn!(target: "ds_core::client", "    [proxy]");
+    warn!(target: "ds_core::client", "    url = \"http://127.0.0.1:7890\"");
+    warn!(target: "ds_core::client", "");
+    warn!(target: "ds_core::client", "  https://github.com/niyue/ds-free-api");
+    warn!(target: "ds_core::client", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 }
 
 #[derive(Clone)]

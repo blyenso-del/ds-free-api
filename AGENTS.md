@@ -44,57 +44,42 @@ Key dependencies and why they matter:
 
 ### Module Structure
 
-```
-src/
-├── main.rs                      # Thin binary wrapper: init logger, load config, run server
-├── lib.rs                       # Public API boundary: exports Config, DeepSeekCore, ChatResponse, OpenAIAdapter, ChatResult, AnthropicCompat
-├── config.rs                    # Config loader: -c flag, config.toml default
-├── ds_core.rs                   # DeepSeek facade: DeepSeekCore, CoreError; declares accounts/ client/ completions/ pow
-├── ds_core/
-│   ├── accounts.rs              # Account pool: init validation, idle-aware (most-idle-first) selection
-│   ├── pow.rs                   # PoW solver: WASM loading, DeepSeekHashV1 computation
-│   ├── completions.rs           # Chat orchestration: SSE streaming, account guard
-│   └── client.rs                # Raw HTTP client: API endpoints, zero business logic
-├── openai_adapter.rs            # OpenAI adapter facade: OpenAIAdapter, OpenAIAdapterError, StreamResponse
-├── openai_adapter/
-│   ├── types.rs                 # OpenAI protocol types (request + response structs)
-│   ├── models.rs                # Model list/get endpoints
-│   ├── request.rs               # Request parsing facade; declares normalize/ prompt/ resolver/ tools/ files
-│   ├── request/
-│   │   ├── normalize.rs         # Request normalization/validation
-│   │   ├── prompt.rs            # DeepSeek native tag prompt construction (<｜User｜>/<｜Assistant｜>)
-│   │   ├── resolver.rs          # Model name to internal type resolution
-│   │   ├── tools.rs             # Tool definition extraction and injection
-│   │   └── files.rs             # File/Image content part to FilePayload extraction
-│   ├── response.rs              # Response conversion facade: stream(), aggregate(); declares sse_parser/ state/ converter/ tool_parser
-│   └── response/
-│       ├── sse_parser.rs        # SSE byte stream to DsFrame event stream
-│       ├── state.rs             # DeepSeek patch state machine
-│       ├── converter.rs         # DsFrame to OpenAI chunk conversion
-│       └── tool_parser.rs       # XML <tool_calls> detection/parse + TagConfig
-├── anthropic_compat.rs          # Anthropic compat facade: AnthropicCompat, AnthropicCompatError, StreamResponse
-├── anthropic_compat/
-│   ├── models.rs                # Anthropic model list/get (translates from OpenAI format)
-│   ├── request.rs               # Anthropic → OpenAI request mapping
-│   ├── response.rs              # Response mapping facade; declares aggregate/ stream
-│   └── response/
-│       ├── aggregate.rs         # Non-streaming OpenAI → Anthropic response conversion
-│       └── stream.rs            # Streaming OpenAI SSE → Anthropic SSE conversion
-├── server.rs                    # HTTP server facade: axum router, auth middleware, shutdown; declares handlers/ stream/ error
-└── server/
-    ├── handlers.rs              # Route handlers: OpenAI + Anthropic endpoints
-    ├── stream.rs                # SseBody: StreamResponse → axum Body
-    └── error.rs                 # ServerError: OpenAI-compatible error JSON responses
-```
+**Core:**
+- `main.rs` — thin binary wrapper (~10 lines): init logger, parse CLI, load config, run server
+- `lib.rs` — public API surface: exports `Config`, `DeepSeekCore`, `ChatResponse`, `OpenAIAdapter`, `ChatResult`, `AnthropicCompat`, etc.
+- `config.rs` — config loader (`-c` flag, `config.toml` default). See `config.example.toml` for all fields.
 
-**Additional files not in src/**:
-- `config.example.toml` — authoritative configuration reference (all fields documented with examples)
-- `examples/adapter_cli.rs` + `examples/adapter_cli-script.txt` — unified protocol debug CLI (modes: `chat`, `raw`, `compare`, `concurrent N`, `status`, `models`/`model <id>`)
-- `examples/adapter_cli/` — JSON request samples (basic_chat, reasoning, reasoning_search, stop, stream, tool_call, tool_call_multi_turn, tool_call_parallel, tool_call_required, web_search)
-- `py-e2e-tests/` — Python e2e test suite (pytest + uv, no extra deps needed):
-  - `scenarios/{basic,repair}/openai|anthropic/*.json` — scenario-driven JSON test cases with request params + check rules
-  - `runner.py` — single-run entry point; `stress_runner.py` — multi-iteration load testing
-  - `config.toml` — e2e-specific server config (port 5317), `conftest.py` — shared fixtures
+**ds_core/ (DeepSeek facade + implementation):**
+- `ds_core.rs` — facade: `DeepSeekCore`, `CoreError`; declares submodules
+- `accounts.rs` — account pool: init validation, idle-aware selection
+- `pow.rs` — PoW solver: WASM loading, DeepSeekHashV1 computation
+- `completions.rs` — chat orchestration: SSE streaming, account guard, file upload
+- `client.rs` — raw HTTP client: API endpoints, envelope parsing, zero business logic
+
+**openai_adapter/ (OpenAI protocol adapter):**
+- `openai_adapter.rs` — facade: `OpenAIAdapter`, `OpenAIAdapterError`, `StreamResponse`
+- `types.rs` — OpenAI request/response structs (`ChatCompletionsRequest`, etc.)
+- `models.rs` — model list/get endpoints
+- `request/` — request pipeline: normalize → tools → files → prompt → resolver → tiktoken
+- `response/` — response pipeline: sse_parser → state → converter → tool_parser → StopStream
+
+**anthropic_compat/ (Anthropic protocol translator):**
+- Sits on top of `openai_adapter`, no direct `ds_core` access
+- `request.rs` — Anthropic → OpenAI request mapping
+- `response/aggregate.rs` — non-streaming OpenAI JSON → Anthropic JSON
+- `response/stream.rs` — streaming OpenAI SSE → Anthropic SSE events
+
+**server/ (HTTP server):**
+- `server.rs` — facade: axum router, auth middleware, graceful shutdown
+- `handlers.rs` — route handlers for OpenAI + Anthropic endpoints
+- `stream.rs` — `SseBody`: wraps `StreamResponse` into `axum::body::Body`
+- `error.rs` — `ServerError`: OpenAI-compatible error JSON responses
+
+**Additional:**
+- `config.example.toml` — authoritative configuration reference
+- `examples/adapter_cli.rs` + `examples/adapter_cli/` — debug CLI + JSON request samples (all features)
+- `py-e2e-tests/` — Python e2e test suite (pytest + uv, JSON-driven scenarios)
+- `docs/` — `code-style.md`, `logging-spec.md`, `deepseek-prompt-injection.md`, `deepseek-api-reference.md`
 
 ### Facade Module Pattern
 
@@ -121,22 +106,20 @@ This means the file tree does not directly map to the public API. To understand 
 ## Key Architectural Patterns
 
 ### Account Pool Model
-1 account = 1 session = 1 concurrency. Scale via more accounts in `config.toml`.
+1 account = 1 session = 1 concurrency. Scale via more accounts in `config.toml`. `AccountGuard` marks an account as `busy` and releases on `Drop`.
 
 ### Request Flow (per-chat)
 `v0_chat()` → `get_account()` → `split_history()` → `create_session()` → `upload_files()` → `compute_pow()` → `completion()` → `parse_ready()` → `GuardedStream`
 
-Each `v0_chat()` call in `completions.rs` creates a dedicated session, uploads multi-turn history as files, then streams the response. The session is destroyed when the stream ends.
+Each `v0_chat()` call creates a dedicated session, uploads multi-turn history as files, then streams the response. The session is destroyed when the stream ends.
 
-### Single-Struct Pipeline
-
-The adapter layer uses a **single struct** (`ChatCompletionsRequest`) that flows through the entire request
-pipeline — no intermediate `AdapterRequest` or `prepare` step:
+### Single-Struct Pipeline (OpenAI)
+The adapter uses a **single struct** (`ChatCompletionsRequest`) through the entire request pipeline — no intermediate types:
 
 ```
 ChatCompletionsRequest
   → normalize::apply |
-  → tools::extract   | 每个子函数直接读 ChatCompletionsRequest 的字段
+  → tools::extract   |  reads ChatCompletionsRequest fields directly
   → files::extract   |
   → prompt::build    |
   → resolver::resolve|
@@ -145,70 +128,41 @@ ChatCompletionsRequest
   → if req.stream → ChatCompletionsResponseChunk | else → ChatCompletionsResponse
 ```
 
-Response structs are serialized directly to JSON (via `#[derive(Serialize)]` + `serde_json::to_vec`),
-with no intermediate representation. `ChatCompletionsResponse` for non-streaming and
-`ChatCompletionsResponseChunk` for streaming are the only two chat completions output types.
-`ModelList`/`Model` serve `/v1/models` independently.
-
-### GuardedStream & Account Lifecycle
-`AccountGuard` marks an account as `busy` and automatically releases it on `Drop`. `GuardedStream` wraps the SSE stream with an `AccountGuard`, so the account is held busy until the stream is fully consumed or dropped. This binds account concurrency to stream lifetime without explicit cleanup logic.
-
-### Account Initialization Flow
-`AccountPool::init()` spins up all accounts concurrently (capped at 13 via `tokio::sync::Semaphore`). Per-account initialization (`try_init_account`) follows:
-1. `login` — obtain Bearer token
-2. `create_session` — create chat session
-3. `health_check` — send a test completion (with PoW) to verify the session is writable
-4. `update_title` — rename session to "managed-by-ai-free-api"
-
-Health check is required because an empty session will fail on `edit_message` with `invalid message id`.
-
-### Temp Session Lifecycle
-Each `v0_chat()` call creates a dedicated chat session and destroys it when the stream ends. `GuardedStream::drop` always calls `delete_session`, regardless of whether the stream completed naturally or the client disconnected. On abnormal disconnection, it also calls `stop_stream` before deletion. This avoids session leaks without explicit cleanup at call sites. Sessions are tracked in `active_sessions: Arc<Mutex<HashMap<String, ActiveSession>>>` to support `stop_stream` delivery by `message_id`.
-
-### History Splitting & File Upload
-Multi-turn conversations are handled by splitting the prompt into an inline portion (most recent messages) and a history portion (earlier messages), uploaded as a file. The split in `split_history_prompt()`:
-- The last user+assistant message pair and the final user message go inline
-- Everything earlier is wrapped in `[file content begin]` … `[file content end]` markers and uploaded as `EMPTY.txt`
-
-External files from the request (`ChatRequest.files`) are uploaded individually before the history file. Upload uses a separate PoW computation targeting `/api/v0/file/upload_file`, then polls for completion with 30 retries at 2s intervals (60s total timeout).
-
-### Request Pipeline (OpenAI)
-```
-JSON body → serde deserialize → normalize (validation/defaults) → tools extract → prompt build (DeepSeek native tags) → resolver (model mapping) → ChatRequest
-```
-
 ### Response Pipeline (OpenAI)
 ```
 ds_core SSE bytes → SseStream (sse_parser) → StateStream (state/patch machine) → ConverterStream (converter) → ToolCallStream (tool_parser) → StopStream (stop sequences) → SSE bytes
 ```
 
-All stream wrappers use `pin_project_lite::pin_project!` macro and implement the `Stream` trait with `poll_next`.
+All stream wrappers use `pin_project_lite::pin_project!` macro and implement `Stream` with `poll_next`.
+
+### GuardedStream & Account Lifecycle
+`AccountGuard` marks an account as `busy` and releases on `Drop`. `GuardedStream` wraps the SSE stream with an `AccountGuard`, holding the account busy until the stream is consumed or dropped. Drop always calls `delete_session`; on abnormal disconnect it also calls `stop_stream`. Sessions tracked in `active_sessions: Arc<Mutex<HashMap<String, ActiveSession>>>`.
+
+### Account Initialization Flow
+`AccountPool::init()` spins up accounts concurrently (capped at 13 via `tokio::sync::Semaphore`):
+1. `login` — obtain Bearer token
+2. `create_session` — create chat session
+3. `health_check` — test completion (with PoW) to verify writable session
+4. `update_title` — rename session to "managed-by-ai-free-api"
+
+### History Splitting & File Upload
+Multi-turn conversations split history at `split_history_prompt()`: the last user+assistant pair + final user message go inline; earlier turns are wrapped in `[file content begin]`/`[file content end]` markers and uploaded as `EMPTY.txt`. External files upload individually first with a separate PoW computation targeting `/api/v0/file/upload_file`.
 
 ### Capability Toggles
-The adapter maps OpenAI request fields to DeepSeek internal flags in `request/resolver.rs`:
-- **Reasoning**: `reasoning_effort` defaults to `"high"` if absent (reasoning is on by default). Explicitly set to `"none"` to disable.
-- **Web search**: `web_search_options` enables search when present; omitted by default (search off).
+Request fields mapped in `request/resolver.rs`:
+- **Reasoning**: defaults to `"high"` (on). Set `"none"` to disable.
+- **Web search**: `web_search_options` enables; omitted = off. See `docs/deepseek-api-reference.md` for details.
+- **File upload**: data URL content parts → auto upload to session; HTTP URLs → search mode.
 
-### Prompt Injection Strategy
-The adapter builds the prompt directly using DeepSeek native tags (`<｜User｜>` / `<｜Assistant｜>` / `<｜Tool｜>` etc.) and embeds system instructions (tool definitions, format requirements, reminder) inside a `<think>` block appended to the last assistant turn. This approach was validated through iterative testing against claude-3.5-sonnet system prompt patterns — see `docs/deepseek-prompt-injection.md` for the full research history and alternative approaches considered.
+### Tool Calls via XML
+Tool definitions injected as natural language into the prompt inside a `<think>` block. Response `<tool_calls>` XML parsed back into structured JSON. Primary tag: `<tool_calls>` (plural); configurable fallback tags via `TagConfig.extra_starts`/`extra_ends` in `config.toml`. `arguments` field normalized to always be a JSON string. See `docs/deepseek-prompt-injection.md` for the prompt injection strategy research.
 
 ### Anthropic Compatibility Layer
-The Anthropic compat layer (`anthropic_compat/`) is a **pure protocol translator** that sits on top of `openai_adapter`:
-- Does NOT directly access `ds_core` — all data flows through `OpenAIAdapter`
-- Request flow: `Anthropic JSON → to_openai_request() → OpenAIAdapter::chat_completions() / try_chat()`
-- Response flow: `OpenAI SSE/JSON → from_chat_completion_stream() / from_chat_completion_bytes() → Anthropic SSE/JSON`
-- Supports both streaming and non-streaming `/v1/messages`
-
-**Streaming tool calls** use the `input_json_delta` event sequence:
-1. `content_block_start` with empty `input: {}`
-2. One or more `content_block_delta` with `input_json_delta` containing partial JSON
-3. `content_block_stop`
-
-**Tool use ID mapping** via `map_id()`: OpenAI `chatcmpl-{hex}` → Anthropic `msg_{hex}`; OpenAI `call_{suffix}` → Anthropic `toolu_{suffix}`.
-
-**Tool `type` compatibility**: Claude Code may omit the `type` field in tool definitions. `ToolUnion` in `request.rs` implements a custom `Deserialize` that defaults to `Custom` when `type` is absent.
-
-**Document content block**: `ContentBlock::Document` is supported — base64 documents are mapped to OpenAI `file` content parts (uploaded as data URLs), and URL documents trigger web search mode (same as `image_url` HTTP links).
+Pure protocol translator on top of `openai_adapter`:
+- Request: `Anthropic JSON → to_openai_request() → OpenAIAdapter::chat_completions() / try_chat()`
+- Response: `OpenAI SSE/JSON → from_chat_completion_stream() / from_chat_completion_bytes() → Anthropic SSE/JSON`
+- ID mapping: `chatcmpl-{hex}` → `msg_{hex}`, `call_{suffix}` → `toolu_{suffix}`
+- `ToolUnion` in `request.rs` defaults to `Custom` type when absent (backward compat with Claude Code)
 
 ### Error Translation Chain
 Errors propagate upward with translation at module boundaries:
@@ -221,49 +175,34 @@ Errors propagate upward with translation at module boundaries:
 
 `client.rs` parses DeepSeek's wrapper envelope `{code, msg, data: {biz_code, biz_msg, biz_data}}` via `Envelope::into_result()`.
 
-### Prompt Token Calculation
-DeepSeek's free API returns `0` for `prompt_tokens`. The adapter computes this server-side in `openai_adapter.rs` using `tiktoken-rs` with the `cl100k_base` tokenizer (same family as GPT-4). The count is stored in `StreamCfg.prompt_tokens` and injected into the final `Usage` object in `converter.rs` for both streaming and non-streaming responses.
-
-### Tool Calls via XML
-The adapter injects tool definitions as natural language into the prompt and parses `<tool_calls>` XML in the response back into structured `tool_calls` JSON. Custom (non-function) tools with grammar/text format definitions are also supported. When a tool call is triggered, `finish_reason` may be `"tool_calls"` instead of `"stop"`.
-
-The `arguments` field in tool call responses is normalized to always be a JSON string (never an object), so downstream consumers receive a consistent type regardless of what DeepSeek returns.
-
-### Configurable Tool Call Tag Fallback
-The primary tag is `<tool_calls>` (with s). The system also supports configurable fallback tag arrays:
-- **`TagConfig.extra_starts`**: hardcoded defaults `["<tool_call>", "<function>"]` + user config from `config.toml`
-- **`TagConfig.extra_ends`**: hardcoded defaults `["</tool_call>", "</function>"]` + user config
-- Default values live only in `config.rs` (single source of truth), loaded via `Arc<TagConfig>` and threaded through the stream pipeline via `StreamCfg`
-- Matching uses sliding-window prefix/suffix search against the full tag array, no paired tuples required
-
-### Obfuscation
-Random base64 padding in SSE chunks to reach a target response size (~512 bytes), controlled by `stream_options.include_obfuscation` (defaults to true).
-
 ### Overloaded Retry
-`OpenAIAdapter::try_chat()` retries up to **6 times** with **exponential backoff** (1s → 2s → 4s → 8s → 16s) on `CoreError::Overloaded`, which is triggered by DeepSeek's `rate_limit_reached` SSE hint or when all accounts are busy.
+`OpenAIAdapter::try_chat()` retries up to **6 times** with **exponential backoff** (1s → 2s → 4s → 8s → 16s) on `CoreError::Overloaded`, triggered by DeepSeek's `rate_limit_reached` SSE hint or all accounts busy.
 
-### request_id & x-ds-account
-Each request gets a `req-{n}` ID generated at the handler, threaded down through adapter → ds_core. Key log points carry `req=` for `grep`-able cross-layer tracing. The `x-ds-account` HTTP response header (set via `SseBody::with_header()`) carries the account identifier upstream from ds_core through `ChatResponse` / `ChatResult<T>` wrappers.
+### Request Tracing & Account Header
+Each request gets a `req-{n}` ID at the handler, threaded through adapter → ds_core. Key log points carry `req=` for cross-layer tracing:
+```bash
+RUST_LOG=debug 2>&1 | grep 'req=req-1'
+```
+The `x-ds-account` HTTP response header carries the account identifier upstream.
 
 ### HTTP Routes
-**OpenAI-compatible:**
-- `GET /` — health check, returns "ai-free-api"
-- `POST /v1/chat/completions` — OpenAI-compatible chat completions (streaming and non-streaming)
-- `GET /v1/models` — list available models
-- `GET /v1/models/{id}` — get a specific model
-
-**Anthropic-compatible:**
-- `POST /anthropic/v1/messages` — Anthropic Messages API (streaming and non-streaming)
-- `GET /anthropic/v1/models` — list available models (Anthropic format)
-- `GET /anthropic/v1/models/{id}` — get a specific model (Anthropic format)
-
-Optional Bearer token auth via `[[server.api_tokens]]` in config; no auth when empty.
+**OpenAI-compatible:** `GET /`, `POST /v1/chat/completions`, `GET /v1/models`, `GET /v1/models/{id}`
+**Anthropic-compatible:** `POST /anthropic/v1/messages`, `GET /anthropic/v1/models`, `GET /anthropic/v1/models/{id}`
+Optional Bearer auth via `[[server.api_tokens]]` in config; no auth when empty.
 
 ### Model ID Mapping
-`model_types` in `[deepseek]` config (default: `["default", "expert"]`) maps each type to OpenAI model ID `deepseek-{type}` (e.g., `deepseek-default`, `deepseek-expert`). Anthropic compat uses the same model IDs.
+`model_types` in `[deepseek]` config (default: `["default", "expert"]`) maps to OpenAI model ID `deepseek-{type}` (e.g., `deepseek-default`, `deepseek-expert`). Anthropic compat uses the same IDs.
 
-### PoW Fragility
-`pow.rs` loads a WASM module downloaded from DeepSeek's CDN. The solver hardcodes the wasm-bindgen-generated symbol `__wbindgen_export_0` for memory allocation. If DeepSeek recompiles the WASM and changes export ordering, instantiation will fail with `PowError::Execution`. The WASM URL is configurable in `config.toml` to allow quick updates.
+## Troubleshooting
+
+| Issue | Symptom | Likely Cause / Fix |
+|-------|---------|--------------------|
+| WASM load failure | `PowError::Execution` on startup | DeepSeek recompiled WASM and changed export ordering. Check `__wbindgen_export_0` symbol in `pow.rs` or update `wasm_url` in `config.toml` |
+| Account init failure | All accounts stuck in init | Bad credentials (login fails first) or rate-limited (too many sessions). Check `[accounts]` in config |
+| Tool call parse failure | No `tool_calls` in response, raw XML visible | Model output a tag variant not in the parse list. Add fallback `extra_starts`/`extra_ends` in `config.toml` `[deepseek]` |
+| Rate limited | Repeated `CoreError::Overloaded` | Add more accounts or reduce concurrency. 6x exponential backoff handles transient spikes |
+| Session errors mid-stream | `invalid message id`, session not found | Usually handled by `GuardedStream::drop` cleanup. If persistent, check concurrent access to same account |
+| Streaming stalls | No SSE events after initial connection | Check `RUST_LOG=adapter=trace,ds_core::accounts=debug,info` for where the pipeline halts |
 
 ## Where to Look
 
@@ -278,7 +217,7 @@ Optional Bearer token auth via `[[server.api_tokens]]` in config; no auth when e
 | OpenAI response conversion | `src/openai_adapter/response/` | sse_parser → state → converter → tool_parser |
 | Tool call tag config | `src/openai_adapter/response/tool_parser.rs` | `TagConfig` with extra_starts/extra_ends fallback arrays |
 | Stream pipeline config | `src/openai_adapter/response.rs` | `StreamCfg` struct (consolidates 8 stream params) |
-| Anthropic compat layer | `src/anthropic_compat/` | request mapping → openai_adapter → response mapping |
+| Anthropic compat layer | `src/anthropic_compat/` | Built on openai_adapter, no direct ds_core access |
 | Anthropic streaming response | `src/anthropic_compat/response/stream.rs` | OpenAI SSE → Anthropic SSE event stream |
 | Anthropic aggregate response | `src/anthropic_compat/response/aggregate.rs` | OpenAI JSON → Anthropic JSON |
 | OpenAI protocol types | `src/openai_adapter/types.rs` | Request/response structs, `#![allow(dead_code)]` |
@@ -291,10 +230,11 @@ Optional Bearer token auth via `[[server.api_tokens]]` in config; no auth when e
 | e2e scenario test framework | `py-e2e-tests/runner.py`, `py-e2e-tests/scenarios/` | JSON-driven scenarios with checks; `stress_runner.py` for load testing |
 | CI pipeline | `.github/workflows/ci.yml` | `cargo check + clippy + fmt + audit + machete` and `cargo test` |
 | Release workflow | `.github/workflows/release.yml` | Tag `v*` triggers multi-platform build (8 targets, 4 OS) + CHANGELOG release notes |
-| Claude config | `AGENTS.md` | Agent delegation patterns for this repo |
-| Code style / logging | `docs/code-style.md`, `docs/logging-spec.md` | Comments, naming, targets, levels |
+| Code style | `docs/code-style.md` | Comments, naming conventions (Chinese in source files) |
+| Logging spec | `docs/logging-spec.md` | Targets, levels, message format for the `log` crate |
 | Prompt injection strategy | `docs/deepseek-prompt-injection.md` | DeepSeek native tags, claude-3.5-sonnet system prompt research |
 | API reference | `docs/deepseek-api-reference.md` | DeepSeek endpoint details |
+| Claude config | `AGENTS.md` | Agent delegation patterns for this repo |
 
 ## Conventions
 
@@ -327,6 +267,7 @@ Optional Bearer token auth via `[[server.api_tokens]]` in config; no auth when e
 - Do NOT use `println!`/`eprintln!` in library code — use `log` crate with target
 - Do NOT use untargeted log macros — always specify `target: "..."`
 - Do NOT access `ds_core` directly from `anthropic_compat` — always go through `OpenAIAdapter`
+- Do NOT add `#[allow(...)]` outside `src/ds_core/client.rs` — dead API methods and deserialized fields for API symmetry are expected only in the raw HTTP client layer
 
 ## Commands
 
@@ -394,5 +335,4 @@ cargo build --release
 git tag v0.x.x
 git push origin v0.x.x
 # CI extracts changelog from CHANGELOG.md, creates GitHub release
-
 ```

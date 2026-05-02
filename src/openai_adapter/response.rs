@@ -11,7 +11,9 @@ mod tool_parser;
 
 pub(crate) use tool_parser::{TOOL_CALL_END, TOOL_CALL_START, TagConfig};
 
+use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -20,8 +22,6 @@ use futures::{Stream, StreamExt};
 use log::{debug, info, trace, warn};
 use pin_project_lite::pin_project;
 use rand::RngExt;
-use std::future::Future;
-use std::sync::Arc;
 use tokio::time::Sleep;
 
 use crate::openai_adapter::{
