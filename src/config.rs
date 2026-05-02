@@ -16,6 +16,16 @@ pub struct Config {
     pub deepseek: DeepSeekConfig,
     /// HTTP 服务器配置（必填）
     pub server: ServerConfig,
+    /// 代理配置（可选，用于绕过 WAF）
+    #[serde(default)]
+    pub proxy: ProxyConfig,
+}
+
+/// 代理配置
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ProxyConfig {
+    /// 代理 URL，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:7891
+    pub url: Option<String>,
 }
 
 /// 单个账号配置

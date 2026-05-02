@@ -54,3 +54,9 @@ password = "pass3"
 # model_types = ["default", "expert"]
 # max_input_tokens = [1048576, 1048576]
 # max_output_tokens = [384000, 384000]
+
+# 代理配置（可选，绕过 CloudFront WAF 地区限制）
+# 使用非美国地区的代理出口节点可避免 WAF Challenge
+# [proxy]
+# url = "http://127.0.0.1:7890"
+# url = "socks5://127.0.0.1:7891"

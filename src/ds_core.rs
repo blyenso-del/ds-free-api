@@ -53,6 +53,7 @@ impl DeepSeekCore {
             config.deepseek.user_agent.clone(),
             config.deepseek.client_version.clone(),
             config.deepseek.client_platform.clone(),
+            config.proxy.url.as_deref(),
         );
 
         let wasm_bytes = client.get_wasm().await?;

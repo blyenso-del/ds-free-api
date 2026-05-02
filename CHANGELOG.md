@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.6] - 2026-05-02
+
+### Added
+- **代理配置**：新增 `[proxy]` 配置项，支持 HTTP/HTTPS/SOCKS5 代理。美国地区用户可通过配置非美国
+  出口节点绕过 CloudFront WAF 限制，无需依赖环境变量。
+  ```toml
+  [proxy]
+  url = "http://127.0.0.1:7890"
+  ```
+- **WAF 友好提示**：当检测到 AWS WAF Challenge 时，输出清晰的双语提示和解决方案说明，
+  替代原有的 `error decoding response body` 无意义错误
+- **账号自动去重**：启动时自动按 email（优先）或 mobile 去重，重复配置的账号只会生效一次
+
+### Changed
+- **依赖升级**：wasmtime 43.0.0 → 44.0.0，修复安全通告 RUSTSEC-2026-0114
+
+### Fixed
+- **CI 幂等性**：`cargo install` 步骤添加 `command -v` 前置检查，避免缓存恢复后重复安装失败
+
+### Docs
+- **Prompt injection 策略**：更新 README 中 DeepSeek 原生标签的注入策略说明，
+  补充 `<｜Tool｜>` 标签的使用方式
+- **CLAUDE.md**：完善开发指南，修正 pre-commit hook 描述，补充日志过滤示例
+
 ## [0.2.5] - 2026-04-30
 
 ### Added
