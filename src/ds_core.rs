@@ -96,18 +96,12 @@ impl DeepSeekCore {
     }
 
     /// 动态添加账号
-    pub async fn add_account(
-        &self,
-        creds: &crate::config::Account,
-    ) -> Result<String, PoolError> {
+    pub async fn add_account(&self, creds: &crate::config::Account) -> Result<String, PoolError> {
         self.completions.add_account(creds).await
     }
 
     /// 动态移除账号
-    pub async fn remove_account(
-        &self,
-        email_or_mobile: &str,
-    ) -> Result<String, PoolError> {
+    pub async fn remove_account(&self, email_or_mobile: &str) -> Result<String, PoolError> {
         self.completions.remove_account(email_or_mobile).await
     }
 

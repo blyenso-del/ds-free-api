@@ -25,7 +25,7 @@ use rand::RngExt;
 use tokio::time::Sleep;
 
 use crate::openai_adapter::{
-    OpenAIAdapterError, StreamResponse,
+    OpenAIAdapterError,
     types::{
         ChatCompletionsResponse, ChatCompletionsResponseChunk, Choice, ChunkChoice, Delta,
         FunctionCall, MessageResponse, ToolCall, Usage,
@@ -402,13 +402,14 @@ where
                             this.buffer.clear();
                             *this.sent_len = pos;
                         } else if detect_repetition(
-                            &this.buffer,
-                            &mut this.repeat_window,
+                            this.buffer,
+                            this.repeat_window,
                             *this.repeat_check_len,
-                            &mut this.repeat_count,
+                            this.repeat_count,
                         ) {
                             // 重复检测触发：截断到重复开始的位置
-                            let truncate_pos = this.buffer.len().saturating_sub(*this.repeat_check_len);
+                            let truncate_pos =
+                                this.buffer.len().saturating_sub(*this.repeat_check_len);
                             trace!(target: "adapter", ">>> repeat: truncate at {}", truncate_pos);
                             let truncated = &this.buffer[*this.sent_len..truncate_pos];
                             if truncated.is_empty() {
@@ -499,69 +500,6 @@ where
         repeat_count: 0,
     };
     Box::pin(stop_detect)
-}
-
-/// 将 ChunkStream 序列化为 SSE 字节流，带 completion_tokens 追踪
-///
-/// `on_finish` 在流结束时被调用，参数为累积的 completion_tokens
-pub(crate) fn sse_stream_with_callback(
-    inner: ChunkStream,
-    on_finish: Box<dyn FnOnce(u64) + Send>,
-) -> StreamResponse {
-    Box::pin(SseSerializer {
-        inner,
-        completion_tokens: 0u64,
-        on_finish: Some(on_finish),
-    })
-}
-
-/// 将 ChunkStream 序列化为 SSE 字节流（无回调）
-#[allow(dead_code)]
-pub(crate) fn sse_stream(inner: ChunkStream) -> StreamResponse {
-    Box::pin(SseSerializer {
-        inner,
-        completion_tokens: 0u64,
-        on_finish: None,
-    })
-}
-
-pin_project! {
-    struct SseSerializer<S> {
-        #[pin]
-        inner: S,
-        completion_tokens: u64,
-        on_finish: Option<Box<dyn FnOnce(u64) + Send>>,
-    }
-}
-
-impl<S> Stream for SseSerializer<S>
-where
-    S: Stream<Item = Result<ChatCompletionsResponseChunk, OpenAIAdapterError>>,
-{
-    type Item = Result<Bytes, OpenAIAdapterError>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut this = self.project();
-        match this.inner.as_mut().poll_next(cx) {
-            Poll::Ready(Some(Ok(chunk))) => {
-                // 追踪 completion_tokens
-                if let Some(u) = &chunk.usage {
-                    *this.completion_tokens = u.completion_tokens as u64;
-                }
-                trace!(target: "adapter", ">>> {}", serde_json::to_string(&chunk).unwrap_or_default());
-                Poll::Ready(Some(sse_serialize(&chunk)))
-            }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
-            Poll::Ready(None) => {
-                // 流结束，触发回调
-                if let Some(on_finish) = this.on_finish.take() {
-                    on_finish(*this.completion_tokens);
-                }
-                Poll::Ready(None)
-            }
-            Poll::Pending => Poll::Pending,
-        }
-    }
 }
 
 /// 非流式响应：stream() 的下游收集器，纯重组无特殊逻辑
@@ -858,8 +796,17 @@ mod tests {
         );
         assert_eq!(resp.choices[0].finish_reason, Some("tool_calls"));
     }
+    use std::pin::Pin;
 
-    async fn collect_chunks(st: StreamResponse) -> Vec<serde_json::Value> {
+    fn to_bytes_stream(
+        st: ChunkStream,
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, OpenAIAdapterError>> + Send>> {
+        Box::pin(st.map(|r| r.and_then(|c| sse_serialize(&c))))
+    }
+
+    async fn collect_chunks(
+        st: Pin<Box<dyn Stream<Item = Result<Bytes, OpenAIAdapterError>> + Send>>,
+    ) -> Vec<serde_json::Value> {
         let mut out = Vec::new();
         let mut st = st;
         while let Some(res) = st.next().await {
@@ -878,7 +825,7 @@ mod tests {
     async fn stream_plain_text() {
         let frames = make_ds_stream(&[("hi", "RESPONSE")], None);
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -915,7 +862,7 @@ mod tests {
     async fn stream_include_usage() {
         let frames = make_ds_stream(&[("x", "RESPONSE")], Some(12));
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -959,7 +906,7 @@ mod tests {
         let tool_xml = tool_span(r#"[{"name": "f", "arguments": {}}]"#);
         let frames = make_ds_stream(&[(&tool_xml, "RESPONSE")], None);
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -1002,7 +949,7 @@ mod tests {
         let tool_xml = tool_span(r#"[{"name": "get_weather", "arguments": {"city": "北京"}}]"#);
         let frames = make_ds_stream(&[("思考中", "THINK"), (&tool_xml, "RESPONSE")], None);
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -1063,7 +1010,7 @@ mod tests {
             data: {\"p\":\"response/status\",\"v\":\"FINISHED\"}\n\n\
             event: finish\ndata: {}\n\n";
         let bytes_stream = futures::stream::iter(vec![sse_bytes(fixture)]);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -1110,7 +1057,7 @@ mod tests {
             None,
         );
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -1213,7 +1160,7 @@ mod tests {
             None,
         );
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -1270,7 +1217,7 @@ mod tests {
             None,
         );
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -1320,7 +1267,7 @@ mod tests {
             None,
         );
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -1362,7 +1309,7 @@ mod tests {
         let tool_xml = tool_span(r#"[{"name": "f", "arguments": {}}]"#);
         let frames = make_ds_stream(&[("好的。", "RESPONSE"), (&tool_xml, "RESPONSE")], None);
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "m".into(),
             super::StreamCfg {
@@ -1393,7 +1340,7 @@ mod tests {
         let tool_xml = tool_span(r#"[{"name": "get_weather", "arguments": {"city": "beijing"}}]"#);
         let frames = make_ds_stream(&[(&tool_xml, "RESPONSE")], None);
         let bytes_stream = futures::stream::iter(frames);
-        let chunks = collect_chunks(super::sse_stream(super::stream(
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
             "deepseek-default".into(),
             super::StreamCfg {

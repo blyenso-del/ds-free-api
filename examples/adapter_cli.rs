@@ -56,7 +56,7 @@ fn read_line_lossy() -> io::Result<String> {
 async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).init();
 
-    let config = Config::load_with_args(std::env::args())?;
+    let (config, _config_path) = Config::load_with_args(std::env::args())?;
     println!("[初始化中...]");
     let adapter = OpenAIAdapter::new(&config).await?;
     println!(

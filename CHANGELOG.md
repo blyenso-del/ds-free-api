@@ -45,6 +45,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **code-style.md**：修复 `docs/logging.md` 断链；补充错误消息语言约定（用户界面中文/内部英文）
   和枚举变体 PascalCase 约定
 
+
+### Added
+- **`DS_CONFIG_PATH` 环境变量**：Docker 部署时通过环境变量指定配置文件路径，
+  优先级：`-c` > `DS_CONFIG_PATH` > 默认 `config.toml`
+- **`Config::save()`**：Config 结构体新增 `save()` 方法，原子写入 TOML 文件（write tmp + rename），
+  unix 权限 0600。管理面板的变更自动写回 `config.toml`
+- **`OpenAIAdapter::sync_accounts()`**：批量对比新旧账号列表，差异化增删。
+  替代原来 70 行内联 diff 逻辑
+- **`auth::setup_admin()` / `auth::login_admin()`**：管理员密码设置和登录的高层编排函数，
+  替代原来 handler 内联的 50 行校验逻辑
+
+### Changed
+- **配置归并**：`admin.json` 和 `api_keys.json` 删除，AdminConfig（密码 hash + JWT 密钥）和
+  ApiKeyEntry（API Key 列表）合并到 `config.toml` 的 `[admin]` / `[[api_keys]]` 节。
+  `stats.json` 保留为运行数据，不属于配置范畴
+- **Config 运行时可变**：`Config` 由启动时冻结的 `Arc<Config>` 改为 `Arc<RwLock<Config>>`，
+  `config.toml` 时刻反映运行状态，不重启即可通过管理面板改配置并持久化
+- **sse_stream_with_callback 删除**：OpenAI 流式响应路径改用 `inspect`/`map`/`TokenGuardStream`
+  （与 Anthropic 路径完全对称），不再通过回调逃逸统计逻辑
+- **handler 瘦身**：
+  - `chat_completions` / `anthropic_messages` 的统计日志代码提取为 `AppState::record_request()`
+  - `admin_setup` / `admin_login` 从各 ~50 行压缩到 ~12 行（委托 `auth::*`）
+  - `admin_reload_config` 从 ~70 行压缩到 ~10 行（委托 `OpenAIAdapter::sync_accounts()`）
+- **store.rs 重构**：`StoreManager` 从读写独立 JSON 文件改为委托共享 `Arc<RwLock<Config>>`，
+  `admin.json` / `api_keys.json` 读写全部通过 `config.save()` 落盘
+- **`save_admin` 参数优化**：从 `&AdminStore` 结构体改为三个独立参数 `(String, String, u64)`，
+  避免多余的 `to_string()` clone
+- **Dockerfile 更新**：`config.example.toml` → `/app/config.toml`，设置 `DS_CONFIG_PATH` 环境变量
+
+### Removed
+- `DS_CONFIG` 环境变量：配置路径现在通过 `-c` 或 `DS_CONFIG_PATH` 指定，启动后 `config_path`
+  通过 `AppState.config_path` 传递，reload 时使用同一路径
+- `admin.json` 和 `api_keys.json`：合并入 `config.toml`
+- 启动时的 `accounts.is_empty()` 验证：无账号启动后通过管理面板添加
+- `sse_stream_with_callback()` / `sse_stream()` / `SseSerializer` struct：改用 `TokenGuardStream`
+
+### Fixed
+- **管理面板 reload 路径一致**：`admin_reload_config` 不再独立读 `DS_CONFIG` 环境变量，
+  而是使用 `AppState.config_path`，确保启动 `-c` 指定的路径与 reload 路径一致
 ## [0.2.5] - 2026-04-30
 
 ### Added

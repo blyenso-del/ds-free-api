@@ -70,7 +70,12 @@ impl DualLogger {
     }
 
     fn rotate_if_needed(&self) {
-        let size = self.file.lock().ok().and_then(|f| f.metadata().ok().map(|m| m.len())).unwrap_or(0);
+        let size = self
+            .file
+            .lock()
+            .ok()
+            .and_then(|f| f.metadata().ok().map(|m| m.len()))
+            .unwrap_or(0);
         if size < MAX_FILE_SIZE {
             return;
         }
@@ -90,10 +95,9 @@ impl DualLogger {
             .create(true)
             .append(true)
             .open(&self.log_path)
+            && let Ok(mut file_guard) = self.file.lock()
         {
-            if let Ok(mut file_guard) = self.file.lock() {
-                *file_guard = new_file;
-            }
+            *file_guard = new_file;
         }
     }
 

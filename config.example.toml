@@ -70,3 +70,15 @@ password = "pass3"
 # [proxy]
 # url = "http://127.0.0.1:7890"
 # url = "socks5://127.0.0.1:7891"
+
+# Admin 配置（由管理面板自动管理，部署时无需手动填写）
+# [admin]
+# password_hash = ""
+# jwt_secret = ""
+# jwt_issued_at = 0
+
+# API Key 列表（由管理面板自动管理，部署时无需手动填写）
+# [[api_keys]]
+# key = "sk-xxx"
+# description = "My API Key"
+# created_at = 1700000000

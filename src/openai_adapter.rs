@@ -127,7 +127,8 @@ impl OpenAIAdapter {
         )
         .map_err(OpenAIAdapterError::BadRequest)?;
 
-        let prompt_tokens = self.bpe
+        let prompt_tokens = self
+            .bpe
             .as_ref()
             .map(|bpe| bpe.encode_with_special_tokens(&prompt).len() as u32)
             .unwrap_or(0);
@@ -322,7 +323,79 @@ impl OpenAIAdapter {
     pub async fn re_login_single(&self, email_or_mobile: &str) -> Result<(), String> {
         self.ds_core.re_login_single(email_or_mobile).await
     }
+}
 
+/// Diff 同步账号的结果
+pub(crate) struct SyncResult {
+    pub added: usize,
+    pub removed: usize,
+    pub failed: usize,
+}
+impl OpenAIAdapter {
+    /// 批量同步账号：对比当前账号池与目标配置，增删差异账号
+    pub(crate) async fn sync_accounts(
+        &self,
+        new_accounts: &[crate::config::Account],
+    ) -> SyncResult {
+        let old_statuses = self.account_statuses();
+        let old_ids: Vec<String> = old_statuses
+            .iter()
+            .map(|a| {
+                if !a.email.is_empty() {
+                    a.email.clone()
+                } else {
+                    a.mobile.clone()
+                }
+            })
+            .collect();
+
+        let mut added = 0usize;
+        let mut failed = 0usize;
+        for acct in new_accounts {
+            let id = if !acct.email.is_empty() {
+                &acct.email
+            } else {
+                &acct.mobile
+            };
+            if !old_ids.contains(id) {
+                match self.add_account(acct).await {
+                    Ok(_) => added += 1,
+                    Err(e) => {
+                        log::warn!(target: "adapter", "同步添加账号 {} 失败: {}", id, e);
+                        failed += 1;
+                    }
+                }
+            }
+        }
+
+        let mut removed = 0usize;
+        let new_ids: Vec<&str> = new_accounts
+            .iter()
+            .map(|a| {
+                if !a.email.is_empty() {
+                    a.email.as_str()
+                } else {
+                    a.mobile.as_str()
+                }
+            })
+            .collect();
+        for old_id in &old_ids {
+            if !new_ids.contains(&old_id.as_str()) && !old_id.is_empty() {
+                match self.remove_account(old_id).await {
+                    Ok(_) => removed += 1,
+                    Err(e) => {
+                        log::warn!(target: "adapter", "同步移除账号 {} 失败: {}", old_id, e);
+                    }
+                }
+            }
+        }
+
+        SyncResult {
+            added,
+            removed,
+            failed,
+        }
+    }
     /// 优雅关闭
     pub async fn shutdown(&self) {
         self.ds_core.shutdown().await;

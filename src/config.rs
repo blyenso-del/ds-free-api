@@ -3,13 +3,14 @@
 //! 支持 `-c <path>` 命令行参数，默认值见下方函数。
 //! config.toml 中注释项使用代码默认值。
 
-use serde::Deserialize;
-use std::path::Path;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// 应用配置根结构
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
-    /// 账号池（必需）
+    /// 账号池（必需，可为空——启动后通过管理面板添加）
+    #[serde(default)]
     pub accounts: Vec<Account>,
     /// DeepSeek 相关配置
     #[serde(default)]
@@ -19,17 +20,45 @@ pub struct Config {
     /// 代理配置（可选，用于绕过 WAF）
     #[serde(default)]
     pub proxy: ProxyConfig,
+    /// Admin 配置（bcrypt 密码哈希、JWT 密钥等，由管理面板管理）
+    #[serde(default)]
+    pub admin: AdminConfig,
+    /// API Key 列表（由管理面板管理）
+    #[serde(default)]
+    pub api_keys: Vec<ApiKeyEntry>,
+}
+
+/// Admin 配置
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct AdminConfig {
+    /// bcrypt 哈希后的密码
+    #[serde(default)]
+    pub password_hash: String,
+    /// JWT 签名密钥（hex 编码的 32 字节随机值）
+    #[serde(default)]
+    pub jwt_secret: String,
+    /// 最近一次 JWT 签发时间（用于吊销旧 token）
+    #[serde(default)]
+    pub jwt_issued_at: u64,
+}
+
+/// API Key 条目
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ApiKeyEntry {
+    pub key: String,
+    pub description: String,
+    pub created_at: u64,
 }
 
 /// 代理配置
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ProxyConfig {
     /// 代理 URL，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:7891
     pub url: Option<String>,
 }
 
 /// 单个账号配置
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Account {
     /// 邮箱（与 mobile 二选一）
     pub email: String,
@@ -42,7 +71,7 @@ pub struct Account {
 }
 
 /// DeepSeek 客户端配置
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DeepSeekConfig {
     /// API 基础地址
     #[serde(default = "default_api_base")]
@@ -82,7 +111,7 @@ pub struct DeepSeekConfig {
 /// 内置模糊匹配：`｜`(U+FF5C)↔`|`、`▁`(U+2581)↔`_`，自动覆盖大多数字符级幻觉变体。
 /// 此处配置的 extra 列表用于处理格式完全不同的标签（如 `<tool_call>`），
 /// 模糊匹配无法覆盖的情况。
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolCallTagConfig {
     /// 额外开始标签（内置 `<|tool▁calls▁begin|>` + 模糊匹配，此处只加格式完全不同的变体）
     #[serde(default = "default_tool_call_starts")]
@@ -171,7 +200,7 @@ impl DeepSeekConfig {
 }
 
 /// HTTP 服务器配置（必填）
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ServerConfig {
     /// 监听地址
     pub host: String,
@@ -238,7 +267,11 @@ impl Config {
     /// 解析命令行参数并加载配置
     ///
     /// 支持 `-c <path>` 指定配置文件路径，默认使用 `config.toml`
-    pub fn load_with_args(args: impl Iterator<Item = String>) -> Result<Self, ConfigError> {
+    /// 也支持 `DS_CONFIG_PATH` 环境变量（优先级：-c > DS_CONFIG_PATH > 默认值）
+    /// 返回 (加载的配置, 配置文件的路径)
+    pub fn load_with_args(
+        args: impl Iterator<Item = String>,
+    ) -> Result<(Self, PathBuf), ConfigError> {
         let mut config_path = None;
         let mut iter = args.skip(1); // 跳过程序名
 
@@ -252,15 +285,15 @@ impl Config {
             }
         }
 
-        let path = config_path.unwrap_or_else(|| "config.toml".to_string());
-        Self::load(&path)
+        let path: PathBuf = config_path
+            .map(PathBuf::from)
+            .or_else(|| std::env::var("DS_CONFIG_PATH").ok().map(PathBuf::from))
+            .unwrap_or_else(|| PathBuf::from("config.toml"));
+        let config = Self::load(&path)?;
+        Ok((config, path))
     }
-
     /// 验证配置有效性
     fn validate(&self) -> Result<(), ConfigError> {
-        if self.accounts.is_empty() {
-            return Err(ConfigError::Validation("至少需要一个账号配置".to_string()));
-        }
         if self.deepseek.model_types.is_empty() {
             return Err(ConfigError::Validation("model_types 不能为空".to_string()));
         }
@@ -281,6 +314,20 @@ impl Config {
         }
         Ok(())
     }
+    /// 将配置持久化到 TOML 文件（原子写入，unix 权限 0600）
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), ConfigError> {
+        let toml_str = toml::to_string_pretty(self).map_err(ConfigError::TomlSerialization)?;
+        let tmp = path.as_ref().with_extension("toml.tmp");
+        std::fs::write(&tmp, &toml_str)?;
+        std::fs::rename(&tmp, path.as_ref())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(path.as_ref(), perms)?;
+        }
+        Ok(())
+    }
 }
 
 /// 配置加载错误类型
@@ -294,4 +341,6 @@ pub enum ConfigError {
     Validation(String),
     #[error("命令行参数错误: {0}")]
     Cli(String),
+    #[error("TOML 序列化错误: {0}")]
+    TomlSerialization(#[from] toml::ser::Error),
 }

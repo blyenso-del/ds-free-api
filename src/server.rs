@@ -11,6 +11,7 @@ mod stats;
 mod store;
 mod stream;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
@@ -35,24 +36,33 @@ use handlers::AppState;
 pub(crate) struct ApiKeyExt(pub(crate) String);
 
 /// 启动 HTTP 服务器
-pub async fn run(config: Config) -> anyhow::Result<()> {
+pub async fn run(config: Config, config_path: PathBuf) -> anyhow::Result<()> {
+    let cors_origins = config.server.cors_origins.clone();
+    let host = config.server.host.clone();
+    let port = config.server.port;
     let adapter = Arc::new(OpenAIAdapter::new(&config).await?);
+    let config = Arc::new(tokio::sync::RwLock::new(config));
     let anthropic_compat = Arc::new(AnthropicCompat::new(Arc::clone(&adapter)));
     let data_dir = std::env::var("DS_DATA_DIR").unwrap_or_else(|_| ".".to_string());
-    let store = Arc::new(store::StoreManager::new(std::path::Path::new(&data_dir)));
+    let store = Arc::new(store::StoreManager::new(
+        std::path::Path::new(&data_dir),
+        &config_path,
+        config.clone(),
+    ));
     let stats = Arc::new(stats::Stats::new_with_store(Some(store.clone())));
     let login_limiter = Arc::new(auth::LoginLimiter::new());
     let state = AppState {
         adapter: adapter.clone(),
         anthropic_compat,
         stats: stats.clone(),
-        config: Arc::new(config.clone()),
+        config: config.clone(),
+        config_path: config_path.clone(),
         store: store.clone(),
         login_limiter: login_limiter.clone(),
     };
-    let router = build_router(state.clone());
+    let router = build_router(state.clone(), cors_origins);
 
-    let addr = format!("{}:{}", config.server.host, config.server.port);
+    let addr = format!("{}:{}", host, port);
     let listener = TcpListener::bind(&addr).await?;
     log::info!(target: "http::server", "openai兼容base_url: http://{}", addr);
     log::info!(target: "http::server", "anthropic兼容base_url: http://{}/anthropic", addr);
@@ -71,9 +81,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 }
 
 /// 构建路由器
-fn build_router(state: AppState) -> Router {
+fn build_router(state: AppState, cors_origins: Vec<String>) -> Router {
     let store = state.store.clone();
-    let cors_origins = state.config.server.cors_origins.clone();
 
     let public = Router::new()
         .route("/", get(root))
@@ -110,11 +119,20 @@ fn build_router(state: AppState) -> Router {
         // API Key management
         .route("/admin/api/keys", get(admin::admin_list_keys))
         .route("/admin/api/keys", post(admin::admin_create_key))
-        .route("/admin/api/keys/{key}", axum::routing::delete(admin::admin_delete_key))
+        .route(
+            "/admin/api/keys/{key}",
+            axum::routing::delete(admin::admin_delete_key),
+        )
         // Account management
         .route("/admin/api/accounts", post(admin::admin_add_account))
-        .route("/admin/api/accounts/{id}", axum::routing::delete(admin::admin_remove_account))
-        .route("/admin/api/accounts/{id}/relogin", post(admin::admin_relogin_account))
+        .route(
+            "/admin/api/accounts/{id}",
+            axum::routing::delete(admin::admin_remove_account),
+        )
+        .route(
+            "/admin/api/accounts/{id}/relogin",
+            post(admin::admin_relogin_account),
+        )
         // Config hot-reload
         .route("/admin/api/reload", post(admin::admin_reload_config))
         // Request logs
@@ -145,7 +163,9 @@ fn build_router(state: AppState) -> Router {
             .route("/admin/{*path}", get(serve_embedded_spa))
     };
 
-    router.with_state(state).layer(build_cors_layer(&cors_origins))
+    router
+        .with_state(state)
+        .layer(build_cors_layer(&cors_origins))
 }
 
 fn build_cors_layer(origins: &[String]) -> CorsLayer {
@@ -167,12 +187,7 @@ fn build_cors_layer(origins: &[String]) -> CorsLayer {
 
     CorsLayer::new()
         .allow_origin(allowed)
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::DELETE,
-            Method::OPTIONS,
-        ])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers([
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
@@ -187,7 +202,7 @@ struct WebAssets;
 
 /// 提供嵌入的静态资源（JS/CSS/SVG 等）
 async fn serve_embedded_asset(axum::extract::Path(path): axum::extract::Path<String>) -> Response {
-    use axum::http::{header, StatusCode};
+    use axum::http::{StatusCode, header};
 
     let file = WebAssets::get(&path);
     match file {
@@ -206,7 +221,7 @@ async fn serve_embedded_asset(axum::extract::Path(path): axum::extract::Path<Str
 
 /// SPA fallback: 所有非资源路径返回 index.html
 async fn serve_embedded_spa() -> Response {
-    use axum::http::{header, StatusCode};
+    use axum::http::{StatusCode, header};
 
     match WebAssets::get("index.html") {
         Some(content) => (
@@ -253,11 +268,7 @@ async fn health() -> Json<serde_json::Value> {
 }
 
 /// API Key 鉴权中间件（从 api_keys.json 校验 Bearer token）
-async fn api_key_middleware(
-    req: Request,
-    next: Next,
-    store: Arc<store::StoreManager>,
-) -> Response {
+async fn api_key_middleware(req: Request, next: Next, store: Arc<store::StoreManager>) -> Response {
     let token = extract_bearer_token(&req);
     let valid = match token {
         Some(t) => store.is_valid_api_key(t).await,
@@ -280,11 +291,7 @@ async fn api_key_middleware(
 }
 
 /// JWT 鉴权中间件（管理面板路由）
-async fn jwt_middleware(
-    req: Request,
-    next: Next,
-    store: Arc<store::StoreManager>,
-) -> Response {
+async fn jwt_middleware(req: Request, next: Next, store: Arc<store::StoreManager>) -> Response {
     let token = extract_bearer_token(&req);
     let valid = match token {
         Some(t) => auth::verify_jwt(&store, t).await,

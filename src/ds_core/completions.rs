@@ -185,7 +185,16 @@ impl Completions {
 
         for attempt in 0..MAX_ATTEMPTS {
             let first_try = attempt == 0;
-            match self.v0_chat_once(&req, &inline_prompt, &history_content, request_id, first_try).await {
+            match self
+                .v0_chat_once(
+                    &req,
+                    &inline_prompt,
+                    &history_content,
+                    request_id,
+                    first_try,
+                )
+                .await
+            {
                 Ok(resp) => return Ok(resp),
                 Err(CoreError::Overloaded) => {
                     // Overloaded 可能来自：1) 号池无账号（不可重试）2) 账号 rate_limit（已标记 Error，可换号重试）
@@ -252,7 +261,7 @@ impl Completions {
             Ok(id) => id,
             Err(e) => {
                 // 认证/网络错误 → 标记账号 Error
-        self.pool.mark_error(&account_id);
+                self.pool.mark_error(&account_id);
                 return Err(e.into());
             }
         };
@@ -320,7 +329,7 @@ impl Completions {
         {
             Ok(h) => h,
             Err(e) => {
-        self.pool.mark_error(&account_id);
+                self.pool.mark_error(&account_id);
                 return Err(e);
             }
         };
@@ -353,14 +362,10 @@ impl Completions {
             preempt: false,
         };
 
-        let mut raw_stream = match self
-            .client
-            .completion(&token, &pow_header, &payload)
-            .await
-        {
+        let mut raw_stream = match self.client.completion(&token, &pow_header, &payload).await {
             Ok(s) => s,
             Err(e) => {
-        self.pool.mark_error(&account_id);
+                self.pool.mark_error(&account_id);
                 return Err(e.into());
             }
         };
@@ -403,7 +408,7 @@ impl Completions {
                     "req={} hint 限流: rate_limit_reached", request_id
                 );
                 // rate_limit 是账号级限流，标记 Error 触发换号重试
-        self.pool.mark_error(&account_id);
+                self.pool.mark_error(&account_id);
             } else {
                 let hint_detail = second_block
                     .lines()
@@ -534,7 +539,9 @@ impl Completions {
         &self,
         creds: &crate::config::Account,
     ) -> Result<String, crate::ds_core::accounts::PoolError> {
-        self.pool.add_account(creds, &self.client, &self.solver).await
+        self.pool
+            .add_account(creds, &self.client, &self.solver)
+            .await
     }
 
     /// 动态移除账号

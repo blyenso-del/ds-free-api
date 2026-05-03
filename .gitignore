@@ -12,8 +12,6 @@ config.toml
 !py-e2e-tests/config.toml
 
 # 运行时敏感文件
-admin.json
-api_keys.json
 stats.json
 logs/
 data/
@@ -26,7 +24,8 @@ log.txt
 
 # Web (frontend)
 web/node_modules
-web/dist
+web/dist/*
+!web/dist/.gitkeep
 web/dist-ssr
 *.local
 

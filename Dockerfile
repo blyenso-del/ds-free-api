@@ -4,12 +4,13 @@ WORKDIR /app
 
 COPY target/x86_64-unknown-linux-gnu/release/ds-free-api /app/ds-free-api
 COPY web/dist /app/web/dist
-COPY config.example.toml /app/config.example.toml
-
-VOLUME /app/data
+COPY config.example.toml /app/config.toml
 
 ENV RUST_LOG=info
 ENV DS_DATA_DIR=/app/data
+VOLUME /app/data
+ENV DS_CONFIG_PATH=/app/config.toml
+
 
 EXPOSE 5317
 

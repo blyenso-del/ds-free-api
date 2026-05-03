@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
 use super::store::StoreManager;
@@ -52,17 +52,21 @@ pub async fn verify_jwt(store: &StoreManager, token: &str) -> bool {
     };
     let mut validation = Validation::default();
     validation.leeway = 60; // 允许 60 秒时钟偏差
-    let claims = match decode::<TokenClaims>(token, &DecodingKey::from_secret(secret.as_bytes()), &validation) {
+    let claims = match decode::<TokenClaims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    ) {
         Ok(data) => data.claims,
         Err(_) => return false,
     };
 
     // 吊销检查：token 的 iat 必须 >= 存储的 jwt_issued_at
     // 改密码时会更新 jwt_issued_at，使旧 token 失效
-    if let Some(min_iat) = store.jwt_issued_at().await {
-        if claims.iat < min_iat {
-            return false;
-        }
+    if let Some(min_iat) = store.jwt_issued_at().await
+        && claims.iat < min_iat
+    {
+        return false;
     }
 
     true
@@ -125,11 +129,7 @@ impl LoginLimiter {
             return 0;
         }
         let now = epoch_secs();
-        if now >= until {
-            0
-        } else {
-            until - now
-        }
+        until.saturating_sub(now)
     }
 }
 
@@ -140,4 +140,64 @@ fn epoch_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+// ── 高层管理函数 ──────────────────────────────────────────────────────────
+
+/// 首次设置管理员密码，返回 JWT token
+pub async fn setup_admin(
+    store: &StoreManager,
+    limiter: &LoginLimiter,
+    password: &str,
+) -> Result<String, String> {
+    if store.has_password().await {
+        return Err("密码已设置，请使用登录接口".into());
+    }
+
+    if limiter.is_locked() {
+        return Err(format!(
+            "请求次数过多，请 {} 秒后重试",
+            limiter.remaining_lock_secs()
+        ));
+    }
+
+    if password.len() < 6 {
+        limiter.record_failure();
+        return Err("密码长度至少 6 位".into());
+    }
+
+    let password_hash = super::store::hash_password(password);
+    let jwt_secret = super::store::generate_hex_secret();
+    store
+        .save_admin(password_hash, jwt_secret, 0)
+        .await
+        .map_err(|e| format!("保存失败: {}", e))?;
+
+    sign_jwt(store).await.ok_or_else(|| "JWT 签发失败".into())
+}
+
+/// 密码登录，返回 JWT token
+pub async fn login_admin(
+    store: &StoreManager,
+    limiter: &LoginLimiter,
+    password: &str,
+) -> Result<String, String> {
+    if !store.has_password().await {
+        return Err("未设置密码，请先使用 setup 接口".into());
+    }
+
+    if limiter.is_locked() {
+        return Err(format!(
+            "登录失败次数过多，请 {} 秒后重试",
+            limiter.remaining_lock_secs()
+        ));
+    }
+
+    if store.verify_password(password).await {
+        limiter.record_success();
+        sign_jwt(store).await.ok_or_else(|| "JWT 签发失败".into())
+    } else {
+        limiter.record_failure();
+        Err("密码错误".into())
+    }
 }

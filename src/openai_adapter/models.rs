@@ -63,12 +63,12 @@ pub fn get(
     }
 
     // 再查 aliases
-    if let Some(ty) = aliases.get(&target) {
-        if let Some(idx) = model_types.iter().position(|t| t == ty) {
-            let input = max_input_tokens.get(idx).copied();
-            let output = max_output_tokens.get(idx).copied();
-            return Some(make_model(&target, input, output));
-        }
+    if let Some(ty) = aliases.get(&target)
+        && let Some(idx) = model_types.iter().position(|t| t == ty)
+    {
+        let input = max_input_tokens.get(idx).copied();
+        let output = max_output_tokens.get(idx).copied();
+        return Some(make_model(&target, input, output));
     }
 
     None
