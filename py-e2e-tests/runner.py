@@ -258,7 +258,6 @@ def run_anthropic(client: Anthropic, scenario: dict, model: str) -> dict[str, An
 def _anthropic_stream_collect(client: Anthropic, **kwargs: Any) -> Any:
     """流式请求：收集 Anthropic stream events"""
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
-    kwargs["stream"] = True
     with client.messages.stream(**kwargs) as stream:
         return stream.get_final_message()
 

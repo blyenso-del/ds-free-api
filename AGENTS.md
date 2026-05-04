@@ -1,9 +1,9 @@
-# Repository Guidelines
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > This file serves dual duty as both `AGENTS.md` (the real file) and `CLAUDE.md` (symlink → `AGENTS.md`).
 > Edit `AGENTS.md` directly; `CLAUDE.md` stays in sync automatically.
-
-This file provides guidance to AI assistants when working with code in this repository.
 
 ---
 
@@ -367,7 +367,6 @@ Follow `docs/code-style.md`:
 - Do **NOT** use untargeted log macros — always specify `target: "..."`
 - Do **NOT** access `ds_core` directly from `anthropic_compat` — always go through `OpenAIAdapter`
 - Do **NOT** add `#[allow(...)]` outside `src/ds_core/client.rs` — dead API methods and deserialized fields for API symmetry are expected only in the raw HTTP client layer
-
 - Do **NOT** keep admin/auth config in separate JSON files (`admin.json`, `api_keys.json`) — they are merged into `Config` fields and persisted via `Config::save()` into `config.toml`
 - Do **NOT** run `git checkout`, `git commit`, or `gh` commands without explicit user permission — always ask before destructive or persistent operations
 ---
@@ -470,6 +469,7 @@ cargo test --lib
 just e2e-basic    # Basic: 基础功能测试（OpenAI + Anthropic 双端点）
 just e2e-repair   # Repair: 工具调用损坏修复专项测试
 just e2e-stress   # Stress: 全部场景 × 3 次迭代压测
+# See docs/development.md for full e2e CLI parameters (filter, parallel, model, report, etc.)
 
 # Start server with e2e config
 just e2e-serve
