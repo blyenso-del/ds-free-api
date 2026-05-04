@@ -30,9 +30,9 @@ test-adapter-request *ARGS:
 test-adapter-response *ARGS:
   cargo test openai_adapter::response -- "$@"
 
-# Run HTTP server
+# Run HTTP server（自动构建最新前端 -> 启动后端）
 serve *ARGS:
-  cargo run -- "$@"
+  (cd web && npm run build) && cargo run -- "$@"
 
 # Basic: 基础功能测试（两端点）
 e2e-basic *ARGS:

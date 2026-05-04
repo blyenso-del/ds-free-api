@@ -19,6 +19,7 @@ import {
   Globe,
   Key,
   User,
+  Shield,
   Tags,
 } from 'lucide-react';
 
@@ -65,7 +66,9 @@ export function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [revealedKeys, setRevealedKeys] = useState<Record<number, boolean>>({});
-  const [newKeyValues, setNewKeyValues] = useState<Record<number, string>>({});
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<number, boolean>>({});
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
 
   const loadConfig = () => {
     apiFetchConfig()
@@ -100,19 +103,25 @@ export function ConfigPage() {
         server: config.server,
         deepseek: config.deepseek,
         proxy: config.proxy,
-        admin: { password_hash: '', jwt_secret: '', jwt_issued_at: config.admin.jwt_issued_at },
+        admin: {
+          password_hash: '',
+          jwt_secret: '',
+          jwt_issued_at: config.admin.jwt_issued_at,
+          old_password: oldPassword,
+          new_password: newPassword,
+        },
         accounts: config.accounts,
-        api_keys: config.api_keys.map((k, i) => ({
-          key: newKeyValues[i] || k.key_preview,
+        api_keys: config.api_keys.map(k => ({
+          key: k.key,
           description: k.description,
-          created_at: k.created_at,
         })),
       };
       const res = await apiSaveConfig(body);
       if (res.ok) {
         setMessage({ type: 'ok', text: '保存成功，配置已热重载' });
-        setNewKeyValues({});
         setRevealedKeys({});
+        setOldPassword('');
+        setNewPassword('');
         const fresh = await apiFetchConfig();
         setConfig(fresh);
       }
@@ -125,7 +134,6 @@ export function ConfigPage() {
 
   const handleCancel = () => {
     if (confirm('放弃所有未保存的修改？')) {
-      setNewKeyValues({});
       setRevealedKeys({});
       loadConfig();
     }
@@ -204,15 +212,27 @@ export function ConfigPage() {
               </div>
               <div className="flex-1 min-w-[120px]">
                 <label className="text-xs text-muted-foreground">密码</label>
-                <Input
-                  type="password"
-                  value={a.password}
-                  onChange={(e) => {
-                    const next = [...config.accounts];
-                    next[i] = { ...next[i], password: e.target.value };
-                    update(['accounts'], next);
-                  }}
-                />
+                <div className="flex items-center gap-1">
+                  <Input
+                    type={revealedPasswords[i] ? 'text' : 'password'}
+                    value={a.password}
+                    onChange={(e) => {
+                      const next = [...config.accounts];
+                      next[i] = { ...next[i], password: e.target.value };
+                      update(['accounts'], next);
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={() =>
+                      setRevealedPasswords((prev) => ({ ...prev, [i]: !prev[i] }))
+                    }
+                  >
+                    {revealedPasswords[i] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
               </div>
               <Button
                 variant="ghost"
@@ -247,75 +267,70 @@ export function ConfigPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {config.api_keys.map((k, i) => {
-            const isNew = !!newKeyValues[i];
-            const displayKey = isNew ? newKeyValues[i] : k.key_preview;
-            const revealed = isNew ? !!revealedKeys[i] : false;
-            return (
-              <div key={i} className="flex items-center gap-2 p-2 border rounded-md">
-                {/* Show/hide toggle */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={() =>
-                    setRevealedKeys((prev) => ({ ...prev, [i]: !prev[i] }))
-                  }
-                >
-                  {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-                {/* Key value */}
-                <code className="flex-1 font-mono text-xs bg-muted px-2 py-1 rounded select-all">
-                  {revealed ? displayKey : displayKey.slice(0, 8) + '••••'}
-                </code>
-                {/* Copy */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={() => copyToClipboard(displayKey)}
-                  title="复制"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-                {/* Description */}
-                <input
-                  className="flex-1 min-w-[80px] bg-transparent border-b border-dashed border-muted-foreground/30 text-sm px-1 outline-none focus:border-primary"
-                  value={k.description}
-                  placeholder="描述"
-                  onChange={(e) => {
-                    const next = [...config.api_keys];
-                    next[i] = { ...next[i], description: e.target.value };
-                    update(['api_keys'], next);
-                  }}
-                />
-                {/* Created date */}
-                <span className="text-xs text-muted-foreground shrink-0">
-                  {new Date(k.created_at * 1000).toLocaleDateString()}
-                </span>
-                {/* Delete */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={() => update(['api_keys'], config.api_keys.filter((_, j) => j !== i))}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            );
-          })}
+          {config.api_keys.map((k, i) => (
+            <div key={k.key} className="flex items-center gap-2 p-2 border rounded-md">
+              {/* Show/hide toggle */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() =>
+                  setRevealedKeys((prev) => ({ ...prev, [i]: !prev[i] }))
+                }
+              >
+                {revealedKeys[i] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+              {/* Key value */}
+              <Input
+                type={revealedKeys[i] ? 'text' : 'password'}
+                value={k.key}
+                onChange={(e) => {
+                  const next = [...config.api_keys];
+                  next[i] = { ...next[i], key: e.target.value };
+                  update(['api_keys'], next);
+                }}
+                className="flex-1 font-mono text-xs"
+              />
+              {/* Copy */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => copyToClipboard(k.key)}
+                title="复制"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+              {/* Description */}
+              <input
+                className="flex-1 min-w-[80px] bg-transparent border-b border-dashed border-muted-foreground/30 text-sm px-1 outline-none focus:border-primary"
+                value={k.description}
+                placeholder="描述"
+                onChange={(e) => {
+                  const next = [...config.api_keys];
+                  next[i] = { ...next[i], description: e.target.value };
+                  update(['api_keys'], next);
+                }}
+              />
+              {/* Delete */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => update(['api_keys'], config.api_keys.filter((_, j) => j !== i))}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
               const newKey = generateApiKey();
-              const idx = config.api_keys.length;
-              setNewKeyValues((prev) => ({ ...prev, [idx]: newKey }));
-              setRevealedKeys((prev) => ({ ...prev, [idx]: true }));
               update(['api_keys'], [
                 ...config.api_keys,
-                { key_preview: newKey, description: '', created_at: Math.floor(Date.now() / 1000) },
+                { key: newKey, description: '' },
               ]);
             }}
           >
@@ -324,6 +339,37 @@ export function ConfigPage() {
         </CardContent>
       </Card>
 
+
+      {/* ── Admin (collapsible) ────────────────────────────── */}
+      <Section title="Admin" icon={Shield}>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Badge variant={config.admin.password_set ? 'default' : 'secondary'}>
+              {config.admin.password_set ? '密码已设置' : '密码未设置'}
+            </Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">旧密码</label>
+              <Input
+                type="password"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                placeholder="输入旧密码以修改"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">新密码</label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="至少 6 位"
+              />
+            </div>
+          </div>
+        </div>
+      </Section>
       <Separator className="my-2" />
 
       {/* ── Server (collapsible) ──────────────────────────────── */}

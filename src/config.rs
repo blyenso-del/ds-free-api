@@ -40,6 +40,12 @@ pub struct AdminConfig {
     /// 最近一次 JWT 签发时间（用于吊销旧 token）
     #[serde(default)]
     pub jwt_issued_at: u64,
+    /// 修改密码：旧密码明文（仅 PUT 接收，不落地 config.toml）
+    #[serde(default, skip_serializing)]
+    pub old_password: String,
+    /// 修改密码：新密码明文（仅 PUT 接收，不落地 config.toml）
+    #[serde(default, skip_serializing)]
+    pub new_password: String,
 }
 
 /// API Key 条目
@@ -47,7 +53,6 @@ pub struct AdminConfig {
 pub struct ApiKeyEntry {
     pub key: String,
     pub description: String,
-    pub created_at: u64,
 }
 
 /// 代理配置
@@ -341,9 +346,23 @@ impl Config {
                 n
             )));
         }
+        let mut seen_keys = std::collections::HashSet::new();
+        for k in &self.api_keys {
+            if !seen_keys.insert(&k.key) {
+                let prefix = if k.key.len() > 12 {
+                    &k.key[..12]
+                } else {
+                    &k.key
+                };
+                return Err(ConfigError::Validation(format!(
+                    "API key 重复: {}...",
+                    prefix
+                )));
+            }
+        }
         Ok(())
     }
-    /// 将配置持久化到 TOML 文件（原子写入，unix 权限 0600）
+
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), ConfigError> {
         let toml_str = toml::to_string_pretty(self).map_err(ConfigError::TomlSerialization)?;
         let tmp = path.as_ref().with_extension("toml.tmp");

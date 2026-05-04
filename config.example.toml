@@ -18,7 +18,6 @@ port = 5317
 # [[api_keys]]
 # key = "sk-xxx"
 # description = "My API Key"
-# created_at = 1700000000
 
 # 邮箱登录示例
 [[accounts]]

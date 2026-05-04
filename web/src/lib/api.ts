@@ -7,9 +7,15 @@ export function getToken(): string | null {
 export function setToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
 }
-
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+}
+
+let onUnauthorized: (() => void) | null = null;
+
+/** 注册 401 回调：收到 401 时自动调用（用于 AuthProvider 同步 token 状态） */
+export function setOnUnauthorized(cb: (() => void) | null) {
+  onUnauthorized = cb;
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -26,6 +32,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
     clearToken();
+    onUnauthorized?.();
     throw new AuthError('Unauthorized');
   }
   if (!res.ok) {
@@ -182,9 +189,8 @@ export interface AccountEntry {
 }
 
 export interface ApiKeyEntry {
-  key_preview: string;
+  key: string;
   description: string;
-  created_at: number;
 }
 
 export interface FullConfig {

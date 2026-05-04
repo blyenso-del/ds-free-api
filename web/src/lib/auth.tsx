@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AuthContext } from '@/lib/auth-context';
-import { getToken, setToken, clearToken, apiLogin, apiSetup, ApiError } from '@/lib/api';
+import { getToken, setToken, clearToken, apiLogin, apiSetup, ApiError, setOnUnauthorized } from '@/lib/api';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState<string | null>(getToken());
@@ -32,6 +32,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     clearToken();
     setTokenState(null);
+  }, []);
+  // 注册 401 回调：当 API 收到 401 时自动同步 token 状态，触发跳转 login
+  useEffect(() => {
+    setOnUnauthorized(() => setTokenState(null));
+    return () => setOnUnauthorized(null);
   }, []);
 
   return (

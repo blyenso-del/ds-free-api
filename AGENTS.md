@@ -51,13 +51,12 @@ src/
 │   │   ├── prompt.rs    # ChatML → DeepSeek native tags, tool injection
 │   │   ├── resolver.rs  # Model resolution, capability toggles
 │   │   └── tiktoken.rs  # Token counting
-│   └── response/        # Response pipeline: sse_parser → state → converter → tool_parser → StopStream
+│   └── response/        # Response pipeline: sse_parser → state → converter → tool_parser
 │       ├── response.rs  # Facade + StreamCfg struct
 │       ├── sse_parser.rs    # SseStream: raw bytes → SseEvent (event+data)
 │       ├── state.rs         # StateStream: DeepSeek JSON patches → DsFrame
 │       ├── converter.rs     # ConverterStream: DsFrame → ChatCompletionsResponseChunk
 │       ├── tool_parser.rs   # ToolCallStream: XML tag detection, sliding-window repair
-│       └── stop_stream.rs   # StopStream: stop sequence filtering
 │
 ├── anthropic_compat/    # Anthropic protocol translator (on top of openai_adapter)
 │   ├── anthropic_compat.rs # Facade
@@ -211,14 +210,13 @@ ChatCompletionsRequest
   → if req.stream → ChatCompletionsResponseChunk | else → ChatCompletionsResponse
 ```
 
-### Response Pipeline (OpenAI) — 5-Layer Stream Chain
+### Response Pipeline (OpenAI) — 4-Layer Stream Chain
 
 ```
 ds_core SSE bytes → SseStream (sse_parser)
                  → StateStream (state/patch machine)
                  → ConverterStream (converter)
                  → ToolCallStream (tool_parser)
-                 → StopStream (stop sequences)
                  → SSE bytes
 ```
 
@@ -397,8 +395,8 @@ Follow `docs/code-style.md`:
 | Chat orchestration + file upload | `src/ds_core/completions.rs` | `v0_chat()`, history splitting, upload retry, `GuardedStream` |
 | OpenAI request parsing | `src/openai_adapter/request/` | normalize → tools → files → prompt → resolver |
 | File upload extraction | `src/openai_adapter/request/files.rs` | data URL → FilePayload, HTTP URL → search mode |
-| OpenAI response conversion | `src/openai_adapter/response/` | sse_parser → state → converter → tool_parser → stop_stream |
-| Tool call tag config | `src/openai_adapter/response/tool_parser.rs` | `TagConfig` with extra_starts/extra_ends fallback arrays |
+| OpenAI response conversion | `src/openai_adapter/response/` | sse_parser → state → converter → tool_parser |
+| Tool call parser & stop sequences | `src/openai_adapter/response/tool_parser.rs` | `TagConfig` with extra_starts/extra_ends; stop filtering embedded |
 | Stream pipeline config | `src/openai_adapter/response.rs` | `StreamCfg` struct (consolidates 8 stream params) |
 | Anthropic compat layer | `src/anthropic_compat/` | Built on openai_adapter, no direct ds_core access |
 | Anthropic streaming response | `src/anthropic_compat/response/stream.rs` | OpenAI SSE → Anthropic SSE event stream |

@@ -94,9 +94,8 @@ pub struct AdminConfigView {
 
 #[derive(Serialize)]
 pub struct ApiKeyEntryView {
-    pub key_preview: String,
+    pub key: String,
     pub description: String,
-    pub created_at: u64,
 }
 #[derive(Serialize)]
 pub struct AccountView {
@@ -141,9 +140,8 @@ fn mask_config(config: &Config) -> AdminConfigResponse {
             .api_keys
             .iter()
             .map(|k| ApiKeyEntryView {
-                key_preview: mask_key(&k.key),
+                key: k.key.clone(),
                 description: k.description.clone(),
-                created_at: k.created_at,
             })
             .collect(),
         accounts: config
@@ -153,17 +151,9 @@ fn mask_config(config: &Config) -> AdminConfigResponse {
                 email: a.email.clone(),
                 mobile: a.mobile.clone(),
                 area_code: a.area_code.clone(),
-                password: "***".to_string(),
+                password: a.password.clone(),
             })
             .collect(),
-    }
-}
-
-fn mask_key(key: &str) -> String {
-    if key.len() > 8 {
-        format!("***-{}", &key[key.len() - 4..])
-    } else {
-        "***".to_string()
     }
 }
 
@@ -274,8 +264,8 @@ pub(crate) async fn admin_put_config(
     if let Err(e) = new_config.validate() {
         return error_response(StatusCode::BAD_REQUEST, &e.to_string());
     }
-
-    // Merge: empty/"***" passwords and empty keys keep existing values from current config
+    // Merge: empty/"***" passwords keep existing values from current config;
+    // API keys match by `id` (stable identifier), falling back to description for old-format migration.
     {
         let current = state.config.read().await;
         for a in &mut new_config.accounts {
@@ -288,15 +278,37 @@ pub(crate) async fn admin_put_config(
                 a.password.clone_from(&existing.password);
             }
         }
-        for k in &mut new_config.api_keys {
-            if (k.key.is_empty() || k.key.starts_with("***"))
-                && let Some(existing) = current
-                    .api_keys
-                    .iter()
-                    .find(|e| e.description == k.description)
+        // Admin 配置：空的 password_hash/jwt_secret 保留现有值（前端不返回这些字段）
+        if new_config.admin.password_hash.is_empty() {
+            new_config
+                .admin
+                .password_hash
+                .clone_from(&current.admin.password_hash);
+        }
+        if new_config.admin.jwt_secret.is_empty() {
+            new_config
+                .admin
+                .jwt_secret
+                .clone_from(&current.admin.jwt_secret);
+        }
+        // 密码修改：前端发 old_password + new_password
+        if !new_config.admin.old_password.is_empty() || !new_config.admin.new_password.is_empty() {
+            if new_config.admin.old_password.is_empty() || new_config.admin.new_password.is_empty()
             {
-                k.key.clone_from(&existing.key);
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "修改密码需要同时提供旧密码和新密码",
+                );
             }
+            if !bcrypt::verify(&new_config.admin.old_password, &current.admin.password_hash)
+                .unwrap_or(false)
+            {
+                return error_response(StatusCode::BAD_REQUEST, "旧密码不正确");
+            }
+            new_config.admin.password_hash =
+                super::store::hash_password(&new_config.admin.new_password);
+            new_config.admin.jwt_secret = super::store::generate_hex_secret();
+            new_config.admin.jwt_issued_at += 1;
         }
     }
 
