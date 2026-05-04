@@ -8,6 +8,17 @@ port = 5317
 
 # API Key 和管理密码通过 Web 管理面板配置（http://127.0.0.1:5317/admin）
 # 首次访问时将引导设置管理密码，之后可在面板中创建/管理 API Key
+# Admin 配置（由管理面板自动管理，部署时无需手动填写）
+# [admin]
+# password_hash = ""
+# jwt_secret = ""
+# jwt_issued_at = 0
+
+# API Key 列表（由管理面板自动管理，部署时无需手动填写）
+# [[api_keys]]
+# key = "sk-xxx"
+# description = "My API Key"
+# created_at = 1700000000
 
 # 邮箱登录示例
 [[accounts]]
@@ -69,15 +80,3 @@ password = "pass3"
 # [proxy]
 # url = "http://127.0.0.1:7890"
 # url = "socks5://127.0.0.1:7891"
-
-# Admin 配置（由管理面板自动管理，部署时无需手动填写）
-# [admin]
-# password_hash = ""
-# jwt_secret = ""
-# jwt_issued_at = 0
-
-# API Key 列表（由管理面板自动管理，部署时无需手动填写）
-# [[api_keys]]
-# key = "sk-xxx"
-# description = "My API Key"
-# created_at = 1700000000

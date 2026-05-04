@@ -4,44 +4,97 @@
 
 - Rust **1.95.0+** (see `rust-toolchain.toml`)
 - Node.js **18+** (for web panel development)
+- `just` command runner (used for `just serve` / `just check` etc.)
 
-## Building from Source
+## First-time Setup
 
 ```bash
-# 1. Build web frontend (compiled into binary, required for release builds)
+# 1. Copy configuration
+cp config.example.toml config.toml
+
+# 2. Build web frontend (compiled into binary via rust_embed, rebuild on frontend changes)
+cd web && npm install && npm run build && cd ..
+
+# 3. Start dev server
+just serve
+```
+
+Access `http://localhost:5317` — it redirects to the admin panel.
+
+> **Frontend HMR development**: Run `cd web && npm run dev` (Vite HMR) alongside
+> `just serve`. The backend reads files from the `web/dist/` directory when available,
+> so frontend changes reflect immediately without rebuilding the binary.
+
+## Release Build
+
+```bash
+# 1. Build web frontend
 cd web && npm install && npm run build && cd ..
 
 # 2. Build release binary
 cargo build --release
 
-# 3. Run
+# 3. Run (binary includes embedded frontend, no extra files needed)
 ./target/release/ds-free-api
 ```
 
-> **Dev mode**: If `web/dist/` exists, the server reads from the filesystem (supports Vite HMR);
-> otherwise it falls back to the embedded assets. Run `npm run dev` (Vite HMR) alongside `just serve` for hot-reload.
+The release binary embeds the frontend assets via `rust_embed` at compile time.
+When `web/dist/` is absent at runtime, the server falls back to the embedded copy.
+No extra files needed for deployment.
 
-## Docker
+## CI Build Pipeline
+
+On tag push, GitHub Actions (`.github/workflows/release.yml`) runs:
+
+```
+build-frontend (npm ci + npm run build)
+  ├── build-linux-gnu (cross)    │
+  ├── build-linux-musl (cross)   │── release (tar.gz + zip)
+  ├── build-macos (cargo build)  │
+  └── build-windows (cargo build)│
+  └── docker (ghcr.io image)
+```
+
+The `build-frontend` job produces a `web-dist` artifact. Every build job downloads it
+before running `cargo build` / `cross build`, ensuring `rust_embed` embeds the real
+frontend assets.
+
+Docker images are pushed automatically to `ghcr.io/niyueee/ds-free-api:latest`.
+
+## Docker Deployment (Production)
+
+Pull from ghcr.io (recommended):
 
 ```bash
-# 1. Cross-compile Rust binary (Mac ARM → x86 Linux)
+docker compose -f docker/docker-compose.yaml up -d
+```
+
+On first run, the container auto-creates a minimal config — no need to prepare
+`config.toml` upfront. Configuration and data persist via bind mounts at
+`docker/config/` and `docker/data/` on the host.
+
+Local Docker image build:
+
+```bash
+# 1. Build frontend + cross-compile binary
+cd web && npm install && npm run build && cd ..
 cargo zigbuild --release --target x86_64-unknown-linux-gnu
 
-# 2. Build frontend
-cd web && npm install && npm run build && cd ..
-
-# 3. Build Docker image
+# 2. Build Docker image
 docker build -f docker/Dockerfile -t ds-free-api .
 
-# 4. Export and transfer to server
+# 3. Export and transfer to server
 docker save ds-free-api | gzip > ds-free-api.tar.gz
 scp ds-free-api.tar.gz user@server:/tmp/
 
-# 5. Load and run on server
+# 4. Load and run on server
 ssh user@server
 docker load < /tmp/ds-free-api.tar.gz
 docker compose -f docker/docker-compose.yaml up -d
 ```
+
+> Building directly on a native x86 server is faster. The Docker image contains
+> only the pre-compiled binary with embedded frontend — no compilation inside the container.
 
 ## Commands
 
@@ -50,7 +103,7 @@ docker compose -f docker/docker-compose.yaml up -d
 just check
 
 # Run tests
-cargo test
+cargo test --lib
 
 # Run HTTP server
 just serve
@@ -71,6 +124,22 @@ The `py-e2e-tests/` framework uses JSON-driven scenarios (no pytest required):
 | **Basic**   | `just e2e-basic`   | Core functionality, both OpenAI + Anthropic endpoints |
 | **Repair**  | `just e2e-repair`  | Tool call malformed format repair (OpenAI only)       |
 | **Stress**  | `just e2e-stress`  | All scenarios × 3 iterations, safe concurrency + 1    |
+
+Start the server first:
+
+```bash
+just e2e-serve
+```
+
+Then in another terminal, run the tests:
+
+```bash
+# Basic scenarios
+just e2e-basic
+
+# Tool call repair
+just e2e-repair
+```
 
 Scenario files are organized under `scenarios/`:
 
@@ -157,5 +226,3 @@ just e2e-basic --report result.json
 - [Logging Spec](logging-spec.md)
 - [DeepSeek API Reference](deepseek-api-reference.md)
 - [Prompt Injection Strategy](deepseek-prompt-injection.md)
-
-> Note: All docs are currently in Chinese. English translations are planned.

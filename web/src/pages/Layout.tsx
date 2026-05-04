@@ -4,18 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard,
-  Users,
   Boxes,
   Settings,
   LogOut,
-  Key,
   ScrollText,
 } from 'lucide-react';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: '概览' },
-  { to: '/accounts', icon: Users, label: '账号池' },
-  { to: '/keys', icon: Key, label: 'API Keys' },
   { to: '/models', icon: Boxes, label: '模型' },
   { to: '/config', icon: Settings, label: '配置' },
   { to: '/logs', icon: ScrollText, label: '日志' },

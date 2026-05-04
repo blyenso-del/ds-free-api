@@ -28,6 +28,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`auth::setup_admin()` / `auth::login_admin()`**：管理员密码设置和登录的高层编排函数，
   替代原来 handler 内联的 50 行校验逻辑
 
+
+- **管理配置 GET 扩展**：`GET /admin/api/config` 返回完整配置（`server.cors_origins`、`deepseek` 全字段、
+  `proxy`、`admin` 状态、`api_key` 脱敏预览），前端无需猜测未返回字段的默认值
+- **PUT 配置合并保护**：账号密码为 `***`/空值时自动保留当前值，新增 key 无法通过面板获取原始值时
+  同样保留，防止管理面板保存时冲掉已有敏感字段
+- **Docker 专用配置模板**：`docker/config.example.toml` 使用 `host = "0.0.0.0"` 且账号为空，
+  内置镜像首次启动即可从管理面板添加账号
+
 ### Changed
 - **依赖升级**：wasmtime 43.0.0 → 44.0.0，修复安全通告 RUSTSEC-2026-0114
 - **inline prompt 瘦身**：`split_history_prompt` 改为只保留最后一个带 `<think>` 的 `<｜Assistant｜>` 块
@@ -58,6 +66,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   时间戳和目标模块变淡，仅在终端连接时启用
 - **client_version 默认值**：`1.8.0` → `2.0.0`
 
+
+- **管理面板配置页重构**：从只读查看改为完整编辑表单，支持 Server、DeepSeek、模型类型、
+  工具调用标签、代理、账号、API Keys 七节编辑。账号和 API Keys 常驻展开，
+  其余默认折叠。底部统一保存/取消按钮
+- **前端导航精简**：删除「账号池」「API Keys」独立页面（后端端点已移除），
+  功能整合到配置编辑器中。Dashboard 删除已移除的「重载配置」按钮
+- **API Keys 前端管理**：支持显示/隐藏 key 值、复制到剪贴板、添加（前端生成随机 `sk-` 值）和删除。
+  新增 key 自动显示完整值
+- **Dockerfile 精简**：移除 `adduser`/`mkdir`/`chown`（无 `USER app`）、
+  移除 `COPY web/dist`（由 `rust_embed` 编译时嵌入）、移除 `VOLUME` 声明
+- **Docker 配置模板分离**：`Dockerfile` 复制 `docker/config.example.toml` 替代根目录 `config.example.toml`，
+  Docker 镜像默认 `host = "0.0.0.0"` 且无示例账号
+- **auto-create 默认 host**：`0.0.0.0` → `127.0.0.1`，与 `config.example.toml` 一致
+- **favicon**：`public/favicon.svg` 改为 `assets/logo.svg` 的符号链接，统一图标源
+- **清理无用前端资产**：移除 Vite 默认模板遗留的 `react.svg`、`vite.svg`、`hero.png`|
 ### Removed
 - `DS_CONFIG` 环境变量：配置路径现在通过 `-c` 或 `DS_CONFIG_PATH` 指定
 - `admin.json` 和 `api_keys.json`：合并入 `config.toml`
@@ -75,6 +98,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **管理面板 reload 路径一致**：`admin_reload_config` 使用 `AppState.config_path`
 - **空账号列表启动崩溃**：`accounts.init()` 在没有账号时不再误报 `AllAccountsFailed`
 - **stats.json 空文件警告**：空文件不再触发 EOF 解析 WARN，降级为 INFO 提示
+
+- **AGENTS.md 过时内容修正**：`/` 端点描述（实际是 302 重定向）、`[[server.api_tokens]]`（改为 `[[api_keys]]`）、
+  WASM 故障排查提示（已改为动态探测）、admin.rs 说明（keys 已移除）
+- **AGENTS.md 内容补充**：CI pipeline 构建流程、前端 `web/` 目录结构及开发模式、管理面板配置编辑器说明
+- **web/dist/.gitkeep 暂存删除恢复**：保持空目录在 git 中，确保无前端环境也能编译 Rust|
 
 ### Docs
 - **Prompt injection 策略**：更新 README 中 DeepSeek 原生标签的注入策略说明

@@ -49,22 +49,55 @@ pub struct AdminConfigResponse {
     pub server: ServerConfigView,
     pub deepseek: DeepSeekConfigView,
     pub accounts: Vec<AccountView>,
+    pub proxy: ProxyConfigView,
+    pub admin: AdminConfigView,
+    pub api_keys: Vec<ApiKeyEntryView>,
 }
 
 #[derive(Serialize)]
 pub struct ServerConfigView {
     pub host: String,
     pub port: u16,
+    pub cors_origins: Vec<String>,
 }
 
 #[derive(Serialize)]
 pub struct DeepSeekConfigView {
     pub api_base: String,
+    pub wasm_url: String,
+    pub user_agent: String,
+    pub client_version: String,
+    pub client_platform: String,
     pub model_types: Vec<String>,
     pub max_input_tokens: Vec<u32>,
     pub max_output_tokens: Vec<u32>,
+    pub model_aliases: Vec<String>,
+    pub tool_call: ToolCallTagConfigView,
 }
 
+#[derive(Serialize)]
+pub struct ToolCallTagConfigView {
+    pub extra_starts: Vec<String>,
+    pub extra_ends: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct ProxyConfigView {
+    pub url: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AdminConfigView {
+    pub password_set: bool,
+    pub jwt_issued_at: u64,
+}
+
+#[derive(Serialize)]
+pub struct ApiKeyEntryView {
+    pub key_preview: String,
+    pub description: String,
+    pub created_at: u64,
+}
 #[derive(Serialize)]
 pub struct AccountView {
     pub email: String,
@@ -80,13 +113,39 @@ fn mask_config(config: &Config) -> AdminConfigResponse {
         server: ServerConfigView {
             host: config.server.host.clone(),
             port: config.server.port,
+            cors_origins: config.server.cors_origins.clone(),
         },
         deepseek: DeepSeekConfigView {
             api_base: config.deepseek.api_base.clone(),
+            wasm_url: config.deepseek.wasm_url.clone(),
+            user_agent: config.deepseek.user_agent.clone(),
+            client_version: config.deepseek.client_version.clone(),
+            client_platform: config.deepseek.client_platform.clone(),
             model_types: config.deepseek.model_types.clone(),
             max_input_tokens: config.deepseek.max_input_tokens.clone(),
             max_output_tokens: config.deepseek.max_output_tokens.clone(),
+            model_aliases: config.deepseek.model_aliases.clone(),
+            tool_call: ToolCallTagConfigView {
+                extra_starts: config.deepseek.tool_call.extra_starts.clone(),
+                extra_ends: config.deepseek.tool_call.extra_ends.clone(),
+            },
         },
+        proxy: ProxyConfigView {
+            url: config.proxy.url.clone(),
+        },
+        admin: AdminConfigView {
+            password_set: !config.admin.password_hash.is_empty(),
+            jwt_issued_at: config.admin.jwt_issued_at,
+        },
+        api_keys: config
+            .api_keys
+            .iter()
+            .map(|k| ApiKeyEntryView {
+                key_preview: mask_key(&k.key),
+                description: k.description.clone(),
+                created_at: k.created_at,
+            })
+            .collect(),
         accounts: config
             .accounts
             .iter()
@@ -97,6 +156,14 @@ fn mask_config(config: &Config) -> AdminConfigResponse {
                 password: "***".to_string(),
             })
             .collect(),
+    }
+}
+
+fn mask_key(key: &str) -> String {
+    if key.len() > 8 {
+        format!("***-{}", &key[key.len() - 4..])
+    } else {
+        "***".to_string()
     }
 }
 
@@ -198,7 +265,7 @@ pub(crate) async fn admin_put_config(
     State(state): State<AppState>,
     body: axum::body::Bytes,
 ) -> Response {
-    let new_config: Config = match serde_json::from_slice(&body) {
+    let mut new_config: Config = match serde_json::from_slice(&body) {
         Ok(c) => c,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, &format!("JSON 解析失败: {}", e)),
     };
@@ -206,6 +273,31 @@ pub(crate) async fn admin_put_config(
     // Validate
     if let Err(e) = new_config.validate() {
         return error_response(StatusCode::BAD_REQUEST, &e.to_string());
+    }
+
+    // Merge: empty/"***" passwords and empty keys keep existing values from current config
+    {
+        let current = state.config.read().await;
+        for a in &mut new_config.accounts {
+            if (a.password.is_empty() || a.password == "***")
+                && let Some(existing) = current
+                    .accounts
+                    .iter()
+                    .find(|e| e.email == a.email && e.mobile == a.mobile)
+            {
+                a.password.clone_from(&existing.password);
+            }
+        }
+        for k in &mut new_config.api_keys {
+            if (k.key.is_empty() || k.key.starts_with("***"))
+                && let Some(existing) = current
+                    .api_keys
+                    .iter()
+                    .find(|e| e.description == k.description)
+            {
+                k.key.clone_from(&existing.key);
+            }
+        }
     }
 
     // Persist

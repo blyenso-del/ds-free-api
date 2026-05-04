@@ -104,6 +104,49 @@ This means the file tree does not directly map to the public API. To understand 
 - `server/stream.rs::SseBody` wraps `StreamResponse` and converts it into an `axum::body::Body`
 - This decouples the adapters from the HTTP framework — they produce bytes, the server handles SSE framing
 
+
+### CI Build Pipeline
+
+On tag push (`.github/workflows/release.yml`):
+
+```
+build-frontend (npm ci + npm run build)
+  ├── build-linux-gnu (cross)    │
+  ├── build-linux-musl (cross)   │── release (tar.gz + zip)
+  ├── build-macos (cargo build)  │
+  └── build-windows (cargo build)│
+  └── docker (ghcr.io image)
+```
+
+`build-frontend` produces a `web-dist` artifact. Each build job downloads it before
+compiling Rust, so `rust_embed` embeds the real frontend assets.
+
+### Frontend (`web/`)
+
+Vite + React + shadcn/ui SPA under `web/`. Built by `npm run build` in `web/`.
+The binary embeds `web/dist/` via `rust_embed` at compile time.
+
+```
+web/
+├── src/
+│   ├── App.tsx            # Routes (login + protected layout + pages)
+│   ├── lib/api.ts         # Typed API client for all admin endpoints
+│   ├── lib/auth.tsx       # JWT auth context (localStorage token)
+│   ├── pages/             # ConfigPage, DashboardPage, Layout, LoginPage, LogsPage, ModelsPage
+│   └── components/ui/     # shadcn/ui primitives (badge, button, card, input, etc.)
+├── public/favicon.svg     # → symlink to assets/logo.svg
+├── index.html
+├── package.json
+└── vite.config.ts
+```
+
+**Admin panel config editor**: `ConfigPage.tsx` fetches from `GET /admin/api/config`,
+edits all sections (accounts, api_keys, server, deepseek, models, proxy, tool_call tags),
+submits via `PUT /admin/api/config` (full replace + hot-reload). Passwords/key values
+sent as `***`/empty are merged with existing values server-side.
+
+**Dev mode (HMR)**: Run `cd web && npm run dev` (Vite HMR) alongside `just serve`.
+Backend reads from `web/dist/` filesystem when available.
 ---
 
 ## Principles
@@ -248,7 +291,7 @@ The `x-ds-account` HTTP response header carries the account identifier upstream.
 
 | Endpoint | Handler | Description |
 |----------|---------|-------------|
-| `GET /` | `handlers::root` | Health check / OK |
+| `GET /` | `handlers::root` | Redirect to /admin |
 | `POST /v1/chat/completions` | `handlers::openai_chat` | OpenAI chat completion |
 | `GET /v1/models` | `handlers::openai_models` | List models |
 | `GET /v1/models/{id}` | `handlers::openai_model` | Get model |
@@ -256,7 +299,7 @@ The `x-ds-account` HTTP response header carries the account identifier upstream.
 | `GET /anthropic/v1/models` | `handlers::anthropic_models` | List models (Anthropic format) |
 | `GET /anthropic/v1/models/{id}` | `handlers::anthropic_model` | Get model (Anthropic format) |
 
-Optional Bearer auth via `[[server.api_tokens]]` in config; no auth when empty.
+Optional Bearer auth via `[[api_keys]]` in config; no auth when empty.|
 
 ### Model ID Mapping
 
@@ -335,7 +378,7 @@ Follow `docs/code-style.md`:
 
 | Issue | Symptom | Likely Cause / Fix |
 |-------|---------|--------------------|
-| WASM load failure | `PowError::Execution` on startup | DeepSeek recompiled WASM and changed export ordering. Check `__wbindgen_export_0` symbol in `pow.rs` or update `wasm_url` in `config.toml` |
+| WASM load failure | `PowError::Execution` on startup | DeepSeek recompiled WASM. PowSolver now uses dynamic export probing (no hardcoded symbols). Update `wasm_url` in `config.toml` if WASM URL changed |
 | Account init failure | All accounts stuck in init | Bad credentials (login fails first) or rate-limited (too many sessions). Check `[accounts]` in config |
 | Tool call parse failure | No `tool_calls` in response, raw XML visible | Model output a tag variant not in the parse list. Add fallback `extra_starts`/`extra_ends` in `config.toml` `[deepseek]` |
 | Rate limited | Repeated `CoreError::Overloaded` | Add more accounts or reduce concurrency. 6x exponential backoff handles transient spikes |
@@ -375,7 +418,7 @@ Follow `docs/code-style.md`:
 | Logging spec | `docs/logging-spec.md` | Targets, levels, message format for `log` crate |
 | Prompt injection strategy | `docs/deepseek-prompt-injection.md` | DeepSeek native tags, claude-3.5-sonnet system prompt research |
 | API reference | `docs/deepseek-api-reference.md` | DeepSeek endpoint details |
-| Admin panel routes | `src/server/admin.rs` | Setup/login/config/stats/models/keys handlers |
+| Admin panel routes | `src/server/admin.rs` | Setup/login/config/status/stats/models/logs handlers |
 | JWT auth + password | `src/server/auth.rs` | `setup_admin()`/`login_admin()`, JWT sign/verify, login rate limiter |
 | Store manager | `src/server/store.rs` | API key validation, stats persistence, delegates admin/keys to `Config::save()` |
 | Request stats | `src/server/stats.rs` | `RequestStats`, `StatsHandle`, background flush to `stats.json` |
@@ -386,8 +429,7 @@ Follow `docs/code-style.md`:
 ## Commands
 
 ```bash
-# Setup (do not commit config.toml)
-cp config.example.toml config.toml
+# Setup (config auto-created on first run; copy example only if you want defaults)
 
 # Enable pre-commit hook (check + clippy + fmt + audit + machete + cargo test)
 git config core.hooksPath .githooks

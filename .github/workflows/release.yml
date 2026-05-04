@@ -16,7 +16,31 @@ permissions:
   packages: write
 
 jobs:
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web
+      - name: Build frontend
+        run: npm run build
+        working-directory: web
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-dist
+          path: web/dist/
+          if-no-files-found: error
   build-linux-gnu:
+    needs: [build-frontend]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -27,6 +51,11 @@ jobs:
             suffix: linux-aarch64-gnu
     steps:
       - uses: actions/checkout@v6
+      - name: Download frontend assets
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist/
       - name: Resolve tag
         id: meta
         run: |
@@ -65,6 +94,7 @@ jobs:
           if-no-files-found: error
 
   build-linux-musl:
+    needs: [build-frontend]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -75,6 +105,11 @@ jobs:
             suffix: linux-aarch64-musl
     steps:
       - uses: actions/checkout@v6
+      - name: Download frontend assets
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist/
       - name: Resolve tag
         id: meta
         run: |
@@ -113,6 +148,7 @@ jobs:
           if-no-files-found: error
 
   build-macos:
+    needs: [build-frontend]
     runs-on: macos-latest
     strategy:
       matrix:
@@ -123,6 +159,11 @@ jobs:
             suffix: macos-aarch64
     steps:
       - uses: actions/checkout@v6
+      - name: Download frontend assets
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist/
       - name: Resolve tag
         id: meta
         run: |
@@ -157,6 +198,7 @@ jobs:
           if-no-files-found: error
 
   build-windows:
+    needs: [build-frontend]
     runs-on: windows-latest
     strategy:
       matrix:
@@ -167,6 +209,11 @@ jobs:
             suffix: windows-aarch64
     steps:
       - uses: actions/checkout@v6
+      - name: Download frontend assets
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist/
       - name: Resolve tag
         id: meta
         shell: pwsh

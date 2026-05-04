@@ -1,12 +1,12 @@
 [server]
-host = "127.0.0.1"
+host = "0.0.0.0"
 port = 5317
 
 # CORS 允许的 Origin 列表（默认 ["http://localhost:5317"]）
 # 设为 ["*"] 允许所有 Origin（不推荐生产使用）
 # cors_origins = ["http://localhost:5317"]
 
-# API Key 和管理密码通过 Web 管理面板配置（http://127.0.0.1:5317/admin）
+# API Key 和管理密码通过 Web 管理面板配置（http://0.0.0.0:5317/admin）
 # 首次访问时将引导设置管理密码，之后可在面板中创建/管理 API Key
 # Admin 配置（由管理面板自动管理，部署时无需手动填写）
 # [admin]
@@ -14,40 +14,18 @@ port = 5317
 # jwt_secret = ""
 # jwt_issued_at = 0
 
-[[api_keys]]
-key = "sk-test"
-description = "开发测试"
-created_at = 1700000000
+# API Key 列表（由管理面板自动管理，部署时无需手动填写）
+# [[api_keys]]
+# key = "sk-xxx"
+# description = "My API Key"
+# created_at = 1700000000
 
-[[accounts]]
-email = "idyllic4202@wplacetools.com"
-mobile = ""
-area_code = ""
-password = "test12345"
-
-[[accounts]]
-email = "espialeilani+grace@gmail.com"
-mobile = ""
-area_code = ""
-password = "test12345"
-
-[[accounts]]
-email = "ar.r.o.g.anc.e.p.c.hz.xp@gmail.com"
-mobile = ""
-area_code = ""
-password = "test12345"
-
-[[accounts]]
-email = "theobald2798+gladden@gmail.com"
-mobile = ""
-area_code = ""
-password = "test12345"
-
-[[accounts]]
-email = "vj.zh.z.h.d.b.b.d.udhj.db@gmail.com"
-mobile = ""
-area_code = ""
-password = "test12345"
+# 账号列表（通过管理面板添加，此处仅供参考）
+# [[accounts]]
+# email = "user@example.com"
+# mobile = ""
+# area_code = ""
+# password = "pass"
 
 [deepseek]
 # 工具调用标签配置

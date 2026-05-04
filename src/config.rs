@@ -299,7 +299,7 @@ impl Config {
                 accounts: Vec::new(),
                 deepseek: DeepSeekConfig::default(),
                 server: ServerConfig {
-                    host: "0.0.0.0".into(),
+                    host: "127.0.0.1".into(),
                     port: 5317,
                     cors_origins: default_cors_origins(),
                 },
