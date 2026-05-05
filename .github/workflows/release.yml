@@ -47,8 +47,10 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             suffix: linux-x86_64-gnu
+            use-cross: false
           - target: aarch64-unknown-linux-gnu
             suffix: linux-aarch64-gnu
+            use-cross: true
     steps:
       - uses: actions/checkout@v6
       - name: Download frontend assets
@@ -70,11 +72,16 @@ jobs:
           target: ${{ matrix.target }}
           cache-key: ${{ matrix.target }}
       - name: Install cross
+        if: matrix.use-cross
         uses: taiki-e/install-action@v2
         with:
           tool: cross
-      - name: Build
+      - name: Build (cross)
+        if: matrix.use-cross
         run: cross build --release --target ${{ matrix.target }}
+      - name: Build (native)
+        if: ${{ !matrix.use-cross }}
+        run: cargo build --release --target ${{ matrix.target }}
       - name: Package
         run: |
           name="ds-free-api-${{ steps.meta.outputs.tag }}-${{ matrix.suffix }}"
@@ -342,5 +349,6 @@ jobs:
           files: dist/*
           generate_release_notes: false
           body_path: release_notes.md
+          draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
