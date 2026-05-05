@@ -36,8 +36,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Docker 专用配置模板**：`docker/config.example.toml` 使用 `host = "0.0.0.0"` 且账号为空，
   内置镜像首次启动即可从管理面板添加账号
 - **CI 前端构建校验**：`build-frontend` job 执行 `npm ci + build + lint`，产物同步供后端 check/test 使用|
+- **CI 构建依赖**：check 和 test job 新增 `cmake g++ libclang-dev` 安装，支撑 `rquest` 的 BoringSSL 编译
+- **`X-Client-Locale` 请求头**：`DeepSeekConfig` 新增 `client_locale` 字段，默认值 `zh_CN`，
+  请求携带 `X-Client-Locale: zh_CN` 头
+- **前端配置编辑扩展**：管理面板 ConfigPage 新增 Client Locale 编辑字段
+- **前端 vite 自动读取后端端口**：`vite.config.ts` 从项目根目录 `config.toml` 读取后端端口，
+  开发代理与运行时配置自动同步
 
 ### Changed
+- **HTTP 客户端替换**：`reqwest`（rustls）→ `rquest` + `rquest-util`（BoringSSL + Chrome136 TLS 指纹模拟）。
+  替换后 TLS 握手指纹模拟 Chrome 136 浏览器，配合请求头变更绕过 WAF 指纹检测
+- **默认端口**：`5317` → `22217`，避开 Win10 Hyper-V 动态端口保留区间（5000–6000），
+  降低 Windows 用户端口冲突概率
+- **默认请求头**：全面切换为 DeepSeek Android 客户端格式 ——
+  `User-Agent: DeepSeek/2.0.4 Android/35`、`X-Client-Version: 2.0.4`、`X-Client-Platform: android`
+- **示例配置与文档同步**：`config.example.toml` × 2、`py-e2e-tests/config.toml`、README、
+  AGENTS.md、docs/development.md 等全部更新为 22217 端口和 Android 请求头默认值
+- **Docker 镜像**：`docker/Dockerfile` 暴露端口更新为 `22217`
 - **依赖升级**：wasmtime 43.0.0 → 44.0.0，修复安全通告 RUSTSEC-2026-0114
 - **inline prompt 瘦身**：`split_history_prompt` 改为只保留最后一个带 `<think>` 的 `<｜Assistant｜>` 块
   作为 inline，其余全部进入 history 文件上传。避免工具调用结果超长导致输入超限
@@ -95,6 +110,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   统一由 `PUT /admin/api/config` 替代
 - `.dockerignore`：Dockerfile 已使用精确 COPY 路径，不再需要
 - 根目录 `Dockerfile` / `docker-compose.yml`：移入 `docker/` 目录
+- `web/config.toml`：无用旧文件，前端 vite dev 已改为读取项目根目录 `config.toml`
 
 ### Fixed
 - **CI 幂等性**：`cargo install` 步骤添加 `command -v` 前置检查

@@ -19,7 +19,7 @@ cd web && npm install && npm run build && cd ..
 just serve
 ```
 
-Access `http://localhost:5317` — it redirects to the admin panel.
+Access `http://localhost:22217` — it redirects to the admin panel.
 
 > **Frontend HMR development**: Run `cd web && npm run dev` (Vite HMR) alongside
 > `just serve`. The backend reads files from the `web/dist/` directory when available,

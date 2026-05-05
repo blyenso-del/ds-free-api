@@ -11,6 +11,6 @@ ENV RUST_LOG=info \
     DS_DATA_DIR=/app/data \
     DS_CONFIG_PATH=/app/config/config.toml
 
-EXPOSE 5317
+EXPOSE 22217
 
 ENTRYPOINT ["/app/ds-free-api"]

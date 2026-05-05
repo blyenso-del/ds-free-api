@@ -7,7 +7,7 @@ services:
     container_name: ds-free-api
     restart: unless-stopped
     ports:
-      - "5317:5317"
+      - "22217:22217"
     volumes:
       - ./config:/app/config
       - ./data:/app/data

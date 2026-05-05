@@ -165,6 +165,7 @@ export interface DeepSeekConfig {
   user_agent: string;
   client_version: string;
   client_platform: string;
+  client_locale: string;
   model_types: string[];
   max_input_tokens: number[];
   max_output_tokens: number[];

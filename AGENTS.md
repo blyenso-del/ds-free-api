@@ -465,7 +465,7 @@ cargo test
 # Run only library tests (skips example compilation, faster iteration)
 cargo test --lib
 
-# e2e tests (requires `uv`, server on port 5317)
+# e2e tests (requires `uv`, server on port 22217)
 just e2e-basic    # Basic: 基础功能测试（OpenAI + Anthropic 双端点）
 just e2e-repair   # Repair: 工具调用损坏修复专项测试
 just e2e-stress   # Stress: 全部场景 × 3 次迭代压测

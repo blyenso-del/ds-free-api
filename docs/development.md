@@ -19,7 +19,7 @@ cd web && npm install && npm run build && cd ..
 just serve
 ```
 
-服务器启动后访问 `http://localhost:5317` 自动跳转到管理面板。
+服务器启动后访问 `http://localhost:22217` 自动跳转到管理面板。
 
 > **前端热更新开发**：同时运行 `cd web && npm run dev`（Vite HMR 模式）
 > 和 `just serve`，后端优先使用文件系统 `web/dist/` 目录中的静态文件。

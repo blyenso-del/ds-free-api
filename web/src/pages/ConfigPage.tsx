@@ -440,6 +440,13 @@ export function ConfigPage() {
               onChange={(e) => update(['deepseek', 'client_platform'], e.target.value)}
             />
           </div>
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">Client Locale</label>
+            <Input
+              value={config.deepseek.client_locale}
+              onChange={(e) => update(['deepseek', 'client_locale'], e.target.value)}
+            />
+          </div>
         </div>
       </Section>
 

@@ -37,7 +37,7 @@ A Rust API proxy that translates DeepSeek's free web chat into standard OpenAI a
 1. Download and extract the archive for your platform from [releases](https://github.com/NIyueeE/ds-free-api/releases)
 2. Copy `config.example.toml` to `config.toml` and fill in accounts (optional — you can also configure via the admin panel after startup)
 3. Run `./ds-free-api`
-4. Visit `http://127.0.0.1:5317/admin` to set an admin password, then manage API keys and accounts from the panel
+4. Visit `http://127.0.0.1:22217/admin` to set an admin password, then manage API keys and accounts from the panel
 
 ```bash
 ./ds-free-api
@@ -56,7 +56,7 @@ docker compose -f docker-compose.yaml up -d
 
 Refer to the [sample compose file](./docker/docker-compose.yaml) for reference.
 
-The admin panel is at `http://localhost:5317/admin`. Set your admin password on first visit.
+The admin panel is at `http://localhost:22217/admin`. Set your admin password on first visit.
 The `config/` and `data/` directories are bind-mounted into the container — config changes persist to the host automatically.
 
 ### Free Test Accounts
@@ -134,7 +134,7 @@ The Anthropic compatibility layer uses the same model IDs via `/anthropic/v1/mes
 
 ## Web Admin Panel
 
-Visit `http://127.0.0.1:5317/admin` after starting the server:
+Visit `http://127.0.0.1:22217/admin` after starting the server:
 
 - **Dashboard**: Request statistics, account pool status at a glance
 - **Accounts**: View/add/remove accounts, manually re-login accounts in Error state
@@ -149,7 +149,7 @@ On first visit, you'll be guided to set an admin password (stored as bcrypt hash
 
 - **Admin panel**: JWT authentication + bcrypt password hash + login rate limiting (5 failures → 5-minute lockout)
 - **API access**: API keys created via the admin panel (HashSet O(1) lookup)
-- **CORS**: Configurable allowed origins, defaults to `http://localhost:5317`
+- **CORS**: Configurable allowed origins, defaults to `http://localhost:22217`
 - **Sensitive data**: Account IDs masked in response headers, request bodies excluded from logs, persisted files at 0600 permissions
 
 ## Development
