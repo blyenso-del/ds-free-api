@@ -126,7 +126,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake g++ musl-tools
-      - name: Configure musl target
+      - name: Configure musl target (aarch64 native only)
+        if: ${{ matrix.runner == 'ubuntu-24.04-arm' }}
         env:
           TARGET: ${{ matrix.target }}
         run: |
@@ -134,15 +135,22 @@ jobs:
           echo "CC_${TARGET_US}=musl-gcc" >> "$GITHUB_ENV"
           echo "CXX_${TARGET_US}=musl-gcc" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_${TARGET_US}_LINKER=musl-gcc" >> "$GITHUB_ENV"
-          # Ensure CMake and C build scripts use musl-gcc (not host gcc)
           echo "CC=musl-gcc" >> "$GITHUB_ENV"
           echo "CXX=musl-gcc" >> "$GITHUB_ENV"
           echo "CMAKE_C_COMPILER=musl-gcc" >> "$GITHUB_ENV"
           echo "CMAKE_CXX_COMPILER=musl-gcc" >> "$GITHUB_ENV"
-          # Disable glibc _FORTIFY_SOURCE to avoid __*_chk undefined refs in musl
           echo "CFLAGS=-U_FORTIFY_SOURCE" >> "$GITHUB_ENV"
           echo "CXXFLAGS=-U_FORTIFY_SOURCE" >> "$GITHUB_ENV"
-      - name: Build
+      - name: Install cross (x86_64 only)
+        if: ${{ matrix.runner == 'ubuntu-latest' }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Build (x86_64 musl via cross)
+        if: ${{ matrix.runner == 'ubuntu-latest' }}
+        run: cross build --release --target ${{ matrix.target }}
+      - name: Build (aarch64 musl native)
+        if: ${{ matrix.runner == 'ubuntu-24.04-arm' }}
         run: cargo build --release --target ${{ matrix.target }}
       - name: Package
         run: |
