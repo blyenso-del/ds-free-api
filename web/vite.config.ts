@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import fs from 'fs'
 
-const configToml = fs.readFileSync(path.resolve(__dirname, '../config.toml'), 'utf-8')
+const configToml = fs.readFileSync(path.resolve(__dirname, '../py-e2e-tests/config.toml'), 'utf-8')
 const portMatch = configToml.match(/^port\s*=\s*(\d+)/m)
 const backendPort = portMatch ? parseInt(portMatch[1], 10) : 22217
 

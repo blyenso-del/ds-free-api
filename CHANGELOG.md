@@ -40,8 +40,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`X-Client-Locale` 请求头**：`DeepSeekConfig` 新增 `client_locale` 字段，默认值 `zh_CN`，
   请求携带 `X-Client-Locale: zh_CN` 头
 - **前端配置编辑扩展**：管理面板 ConfigPage 新增 Client Locale 编辑字段
-- **前端 vite 自动读取后端端口**：`vite.config.ts` 从项目根目录 `config.toml` 读取后端端口，
-  开发代理与运行时配置自动同步
+- **前端 vite 自动读取后端端口**：`vite.config.ts` 改为从 `py-e2e-tests/config.toml` 读取后端端口，
+  该文件已提交到 git 仓库，CI 构建时不会因文件缺失而失败
 
 ### Changed
 - **HTTP 客户端替换**：`reqwest`（rustls）→ `rquest` + `rquest-util`（BoringSSL + Chrome136 TLS 指纹模拟）。
@@ -110,7 +110,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   统一由 `PUT /admin/api/config` 替代
 - `.dockerignore`：Dockerfile 已使用精确 COPY 路径，不再需要
 - 根目录 `Dockerfile` / `docker-compose.yml`：移入 `docker/` 目录
-- `web/config.toml`：无用旧文件，前端 vite dev 已改为读取项目根目录 `config.toml`
+- `web/config.toml`：无用旧文件，前端 vite dev 已改为读取 `py-e2e-tests/config.toml`
 
 ### Fixed
 - **CI 幂等性**：`cargo install` 步骤添加 `command -v` 前置检查
@@ -130,11 +130,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **CLAUDE.md / AGENTS.md**：精简架构描述，新增故障排除表、请求追踪 grep 示例、
   `#[allow]` 策略说明、git 命令使用须经授权规则
 - **logging-spec.md**：新增 adapter 层和 ds_core 编排层代码示例，补齐全管道日志级别映射
-- **code-style.md**：修复 `docs/logging.md` 断链；补充错误消息语言约定和枚举变体 PascalCase 约定
-- **README / README.en.md 全面精简**：API 端点表简化为 8 个公开端点；模型映射更新为 Vec 格式；
-  开发节保留架构图 + 设计哲学，详细内容移至 `docs/development.md`
+- **code-style.md**：修复 `docs/logging.md` 断链；补充错误消息语言约定和枚举变体 PascalCase 约定；
+  导入分组示例 `reqwest::` → `rquest::`
+- **README / README.en.md**：新增环境变量表格（`RUST_LOG`、`DS_DATA_DIR`、`DS_CONFIG_PATH`）；
+  设计哲学新增"非必要不引入额外运行时系统依赖"原则
 - **英文文档**：创建 `docs/en/` 目录，所有文档提供英文版
-- **`docs/development.md` / `docs/en/development.md`**：构建、Docker、e2e 测试等开发指南
+- **`docs/development.md` / `docs/en/development.md`**：构建、Docker、e2e 测试等开发指南；
+  前置要求新增 `cmake`、`g++`、`libclang-dev`
 
 ## [0.2.5] - 2026-04-30
 

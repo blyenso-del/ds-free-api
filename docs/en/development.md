@@ -4,6 +4,7 @@
 
 - Rust **1.95.0+** (see `rust-toolchain.toml`)
 - Node.js **18+** (for web panel development)
+- `cmake`, `g++`, `libclang-dev` (required to compile BoringSSL for `rquest`)
 - `just` command runner (used for `just serve` / `just check` etc.)
 
 ## First-time Setup

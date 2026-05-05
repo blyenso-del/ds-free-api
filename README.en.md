@@ -145,6 +145,14 @@ Visit `http://127.0.0.1:22217/admin` after starting the server:
 
 On first visit, you'll be guided to set an admin password (stored as bcrypt hash), then issued a JWT (24h validity). Password reset revokes old tokens.
 
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RUST_LOG` | `info` | Log level (`trace` / `debug` / `info` / `warn` / `error`) |
+| `DS_DATA_DIR` | `.` (current dir) | Data directory for `logs/runtime.log` and `stats.json` |
+| `DS_CONFIG_PATH` | `./config.toml` | Config file path (lower priority than `-c` flag) |
+
 ## Security
 
 - **Admin panel**: JWT authentication + bcrypt password hash + login rate limiting (5 failures → 5-minute lockout)
@@ -157,6 +165,8 @@ On first visit, you'll be guided to set an admin password (stored as bcrypt hash
 ### Design Philosophy
 
 **A single `config.toml` reflects all runtime state.** Admin panel changes are instantly persisted to `config.toml` and hot-reloaded into the running service.
+
+**No unnecessary runtime system dependencies.** The project prioritizes pure Rust or statically-linked dependencies (e.g., `rustls` → `rquest` with BoringSSL), ensuring a single binary with no external `.so`/`.dll` requirements — download and run.
 
 ### Architecture Diagram
 
@@ -322,7 +332,7 @@ For detailed development guide (building, testing, Docker deployment, e2e testin
 
 ## License
 
-[Apache License 2.0](LICENSE)
+[GNU General Public License v3.0](LICENSE)
 
 [DeepSeek's official API](https://platform.deepseek.com/top_up) is very affordable — please support the official service.
 
