@@ -120,13 +120,16 @@ jobs:
         with:
           target: ${{ matrix.target }}
           cache-key: ${{ matrix.target }}
+      - name: Install zig
+        run: |
+          wget -qO- https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz \
+            | tar xJ -C /tmp
+          echo "/tmp/zig-x86_64-linux-0.16.0" >> "$GITHUB_PATH"
       - name: Install cargo-zigbuild
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild
       - name: Build
-        env:
-          CARGO_ZIGBUILD_AUTO_DOWNLOAD_ZIG: "true"
         run: cargo zigbuild --release --target ${{ matrix.target }}
       - name: Package
         run: |
