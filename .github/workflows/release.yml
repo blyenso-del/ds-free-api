@@ -134,7 +134,14 @@ jobs:
           echo "CC_${TARGET_US}=musl-gcc" >> "$GITHUB_ENV"
           echo "CXX_${TARGET_US}=musl-gcc" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_${TARGET_US}_LINKER=musl-gcc" >> "$GITHUB_ENV"
-          echo "TARGET_CMAKE_TOOLCHAIN_FILE=1" >> "$GITHUB_ENV"
+          # Ensure CMake and C build scripts use musl-gcc (not host gcc)
+          echo "CC=musl-gcc" >> "$GITHUB_ENV"
+          echo "CXX=musl-gcc" >> "$GITHUB_ENV"
+          echo "CMAKE_C_COMPILER=musl-gcc" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER=musl-gcc" >> "$GITHUB_ENV"
+          # Disable glibc _FORTIFY_SOURCE to avoid __*_chk undefined refs in musl
+          echo "CFLAGS=-U_FORTIFY_SOURCE" >> "$GITHUB_ENV"
+          echo "CXXFLAGS=-U_FORTIFY_SOURCE" >> "$GITHUB_ENV"
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
       - name: Package
@@ -246,7 +253,7 @@ jobs:
           if-no-files-found: error
 
   docker:
-    needs: [build-linux-gnu]
+    needs: [build-linux-musl]
     runs-on: ubuntu-latest
     permissions:
       contents: read
