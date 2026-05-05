@@ -143,6 +143,18 @@ Visit `http://127.0.0.1:22217/admin` after starting the server:
 - **Config**: Current runtime config (sensitive fields masked)
 - **Logs**: Recent request logs and runtime logs
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/NIyueeE/ds-free-api/main/assets/web_p1.png" alt="Dashboard Overview" width="700">
+  <br>
+  <em>Dashboard overview</em>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/NIyueeE/ds-free-api/main/assets/web_p2.png" alt="Config Page" width="700">
+  <br>
+  <em>Config editor page</em>
+</p>
+
 On first visit, you'll be guided to set an admin password (stored as bcrypt hash), then issued a JWT (24h validity). Password reset revokes old tokens.
 
 ## Environment Variables

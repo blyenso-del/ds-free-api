@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.6] - 2026-05-03
+## [0.2.6] - 2026-05-05
 
 ### Added
 - **代理配置**：新增 `[proxy]` 配置项，支持 HTTP/HTTPS/SOCKS5 代理。美国地区用户可通过配置非美国
@@ -92,6 +92,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   新增 key 自动显示完整值
 - **Dockerfile 精简**：移除 `adduser`/`mkdir`/`chown`（无 `USER app`）、
   移除 `COPY web/dist`（由 `rust_embed` 编译时嵌入）、移除 `VOLUME` 声明
+- **版本号统一**：Cargo.toml 0.2.5 → 0.2.6，pyproject.toml 0.2.1 → 0.2.6，
+  与 web/package.json 0.2.6 保持一致
 - **Docker 配置模板分离**：`Dockerfile` 复制 `docker/config.example.toml` 替代根目录 `config.example.toml`，
   Docker 镜像默认 `host = "0.0.0.0"` 且无示例账号
 - **auto-create 默认 host**：`0.0.0.0` → `127.0.0.1`，与 `config.example.toml` 一致
@@ -119,6 +121,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **管理面板 reload 路径一致**：`admin_reload_config` 使用 `AppState.config_path`
 - **空账号列表启动崩溃**：`accounts.init()` 在没有账号时不再误报 `AllAccountsFailed`
 - **stats.json 空文件警告**：空文件不再触发 EOF 解析 WARN，降级为 INFO 提示
+- **e2e 端口硬编码**：runner.py / stress_runner.py 从硬编码 5317 改为从 config.toml 动态读取端口
 
 - **AGENTS.md 过时内容修正**：`/` 端点描述（实际是 302 重定向）、`[[server.api_tokens]]`（改为 `[[api_keys]]`）、
   WASM 故障排查提示（已改为动态探测）、admin.rs 说明（keys 已移除）
@@ -134,7 +137,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   导入分组示例 `reqwest::` → `rquest::`
 - **README / README.en.md**：新增环境变量表格（`RUST_LOG`、`DS_DATA_DIR`、`DS_CONFIG_PATH`）；
   设计哲学新增"非必要不引入额外运行时系统依赖"原则
-- **英文文档**：创建 `docs/en/` 目录，所有文档提供英文版
+- **`docs/en/`**：创建英文文档目录，所有文档提供英文版
+- **README 管理面板截图**：在 Web 管理面板章节添加 Dashboard 概览页和配置编辑页截图
 - **`docs/development.md` / `docs/en/development.md`**：构建、Docker、e2e 测试等开发指南；
   前置要求新增 `cmake`、`g++`、`libclang-dev`
 
