@@ -7,140 +7,78 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.2.6] - 2026-05-05
 
 ### Added
-- **代理配置**：新增 `[proxy]` 配置项，支持 HTTP/HTTPS/SOCKS5 代理。美国地区用户可通过配置非美国
-  出口节点绕过 CloudFront WAF 限制，无需依赖环境变量。
-- **WAF 友好提示**：当检测到 AWS WAF Challenge 时，输出清晰的双语提示和解决方案说明，
-  替代原有的 `error decoding response body` 无意义错误
-- **账号自动去重**：启动时自动按 email（优先）或 mobile 去重，重复配置的账号只会生效一次
+- **Web 管理面板**：基于 Vite + React + shadcn/ui 的 SPA，含登录、Dashboard 概览页、配置编辑页。
+  `PUT /admin/api/config` 统一替代旧 keys/accounts CRUD / reload / relogin 等 6 个分散端点。
+  配置编辑支持 Server、DeepSeek、模型类型、工具调用标签、代理、账号、API Keys 七节编辑，
+  账号和 Keys 常驻展开，其余默认折叠。
+- **管理后台安全**：`auth.rs` JWT 签发/验证（HMAC + SHA256），管理员密码设置与登录，
+  密码 bcrypt 哈希存储，登录频率限制。
+- **Config 管理增强**：
+  - 配置自动创建：配置文件不存在时自动生成最小配置写入磁盘
+  - `Config::save()` 原子写入（tmp + rename + 0600 权限）
+  - `Config` 改为 `Arc<RwLock<Config>>`，运行时可变，管理面板变更自动持久化
+  - `DS_CONFIG_PATH` 环境变量，优先级：`-c` > `DS_CONFIG_PATH` > 默认 `config.toml`
+  - 配置归并：`admin.json`、`api_keys.json` 合并到 `config.toml` 的 `[admin]` / `[[api_keys]]` 节
+  - PUT 配置合并保护：密码/key 为 `***`/空值时自动保留当前值
+- **Docker 部署**：`docker/Dockerfile`（alpine:3.21，musl 静态编译，~20MB 镜像）、
+  `docker/docker-compose.yaml`、`docker/config.example.toml`（host = 0.0.0.0，空账号）。
+  镜像发布到 ghcr.io。
 - **重试全链路日志**：`try_chat()` 每次 Overloaded 退避重试输出 WARN 日志（含尝试次数和等待时间），
-  重试成功输出 INFO 日志，全部失败输出 WARN 终结日志
-- **适配器入口日志**：`chat_completions()` 处理开始时输出模型和 stream 标志的 DEBUG 日志
-- **转换器提前结束检测**：DeepSeek 流在内容输出完毕前断开时输出 WARN 日志并附 usage 快照
-- **`DS_CONFIG_PATH` 环境变量**：Docker 部署时通过环境变量指定配置文件路径，
-  优先级：`-c` > `DS_CONFIG_PATH` > 默认 `config.toml`
-- **`Config::save()`**：Config 结构体新增 `save()` 方法，原子写入 TOML 文件（write tmp + rename），
-  管理面板的变更自动写回 `config.toml`
-- **`Config` 自动创建**：配置文件不存在时（`-c` 未显式指定）自动生成最小配置写入磁盘，
-  首次启动无需准备配置文件，管理面板添加账号后自动持久化
-- **`PUT /admin/api/config`**：全量配置写入端点，接收完整 JSON 配置，持久化并触发全量热重载。
-  替代旧 keys CRUD / accounts CRUD / reload / relogin 等 6 个分散端点
-- **`OpenAIAdapter::sync_accounts()`**：批量对比新旧账号列表，差异化增删
-- **`auth::setup_admin()` / `auth::login_admin()`**：管理员密码设置和登录的高层编排函数，
-  替代原来 handler 内联的 50 行校验逻辑
-
-
-- **管理配置 GET 扩展**：`GET /admin/api/config` 返回完整配置（`server.cors_origins`、`deepseek` 全字段、
-  `proxy`、`admin` 状态、`api_key` 脱敏预览），前端无需猜测未返回字段的默认值
-- **PUT 配置合并保护**：账号密码为 `***`/空值时自动保留当前值，新增 key 无法通过面板获取原始值时
-  同样保留，防止管理面板保存时冲掉已有敏感字段
-- **Docker 专用配置模板**：`docker/config.example.toml` 使用 `host = "0.0.0.0"` 且账号为空，
-  内置镜像首次启动即可从管理面板添加账号
-- **CI 前端构建校验**：`build-frontend` job 执行 `npm ci + build + lint`，产物同步供后端 check/test 使用|
-- **CI 构建依赖**：check 和 test job 新增 `cmake g++ libclang-dev` 安装，支撑 `rquest` 的 BoringSSL 编译
-- **`X-Client-Locale` 请求头**：`DeepSeekConfig` 新增 `client_locale` 字段，默认值 `zh_CN`，
-  请求携带 `X-Client-Locale: zh_CN` 头
-- **前端配置编辑扩展**：管理面板 ConfigPage 新增 Client Locale 编辑字段
-- **前端 vite 自动读取后端端口**：`vite.config.ts` 改为从 `py-e2e-tests/config.toml` 读取后端端口，
-  该文件已提交到 git 仓库，CI 构建时不会因文件缺失而失败
+  重试成功输出 INFO，全部失败输出 WARN 终结日志
+- **WAF 友好提示**：检测到 AWS WAF Challenge 时输出清晰的双语提示，替代原有的无意义错误
+- **账号自动去重**：启动时按 email（优先）或 mobile 去重
+- **`X-Client-Locale` 请求头**：DeepSeekConfig 新增 `client_locale` 字段，默认 `zh_CN`
+- **代理配置**：`[proxy]` 配置项，支持 HTTP/HTTPS/SOCKS5
+- **CI build-frontend 独立 job**：产物供后端 check/test 使用，确保编译嵌入真实前端文件
+- **GPL-3.0 许可证**
 
 ### Changed
-- **HTTP 客户端替换**：`reqwest`（rustls）→ `rquest` + `rquest-util`（BoringSSL + Chrome136 TLS 指纹模拟）。
-  替换后 TLS 握手指纹模拟 Chrome 136 浏览器，配合请求头变更绕过 WAF 指纹检测
-- **默认端口**：`5317` → `22217`，避开 Win10 Hyper-V 动态端口保留区间（5000–6000），
-  降低 Windows 用户端口冲突概率
+- **HTTP 客户端**：`reqwest`（rustls）→ `rquest`（BoringSSL + Chrome 136 TLS 指纹模拟）。
+  替换后 TLS 握手指纹模拟 Chrome 136 浏览器，配合 Android 请求头绕过 WAF 指纹检测
+- **默认端口**：`5317` → `22217`，避开 Win10 Hyper-V 动态端口保留区间（5000–6000）
 - **默认请求头**：全面切换为 DeepSeek Android 客户端格式 ——
   `User-Agent: DeepSeek/2.0.4 Android/35`、`X-Client-Version: 2.0.4`、`X-Client-Platform: android`
-- **示例配置与文档同步**：`config.example.toml` × 2、`py-e2e-tests/config.toml`、README、
-  AGENTS.md、docs/development.md 等全部更新为 22217 端口和 Android 请求头默认值
-- **Docker 镜像**：`docker/Dockerfile` 暴露端口更新为 `22217`
-- **依赖升级**：wasmtime 43.0.0 → 44.0.0，修复安全通告 RUSTSEC-2026-0114
-- **inline prompt 瘦身**：`split_history_prompt` 改为只保留最后一个带 `<think>` 的 `<｜Assistant｜>` 块
-  作为 inline，其余全部进入 history 文件上传。避免工具调用结果超长导致输入超限
-- **工具调用标签模糊匹配**：新增 `norm_tag_char` / `fuzzy_match_tag`，全角 `｜`(U+FF5C)↔`|`、
-  `▁`(U+2581)↔`_` 自动模糊匹配，默认 extra 列表精简为格式完全不同的回退标签
-- **TLS 后端切换**：从 `native-tls`（OpenSSL）切换到 `rustls`（纯 Rust TLS 实现），
-  编译 OpenSSL C 代码不再需要，cross-compilation 速度提升
-- **Docker 基础镜像**：`debian:bookworm-slim`（glibc, ~80MB）→ `alpine:3.21`（musl, ~5MB），
-  最终镜像约 20MB。Dockerfile 移入 `docker/` 目录，使用 musl 编译的 binary
-- **`docker-compose.yml` → `docker-compose.yaml`**：符合最新 Docker Compose 规范，
-  移入 `docker/` 目录，镜像从 `ghcr.io` 拉取，`config/` 和 `data/` 目录 bind mount 持久化
-- **`model_aliases` 类型变更**：从 `HashMap<String, String>` 改为 `Vec<String>`，
-  按 index 对齐 `model_types`，默认无别名。空字符串自动跳过
-- **配置归并**：`admin.json` 和 `api_keys.json` 删除，AdminConfig（密码 hash + JWT 密钥）和
-  ApiKeyEntry（API Key 列表）合并到 `config.toml` 的 `[admin]` / `[[api_keys]]` 节
-- **Config 运行时可变**：`Config` 由启动时冻结的 `Arc<Config>` 改为 `Arc<RwLock<Config>>`
-- **sse_stream_with_callback 删除**：OpenAI 流式响应路径改用 `inspect`/`map`/`TokenGuardStream`
-  （与 Anthropic 路径完全对称）
-- **handler 瘦身**：
-  - `chat_completions` / `anthropic_messages` 的统计日志代码提取为 `AppState::record_request()`
-  - `admin_setup` / `admin_login` 从各 ~50 行压缩到 ~12 行（委托 `auth::*`）
-  - `admin_reload_config` 从 ~70 行压缩到 ~10 行（委托 `OpenAIAdapter::sync_accounts()`）
-- **store.rs 重构**：`StoreManager` 从读写独立 JSON 文件改为委托共享 `Arc<RwLock<Config>>`
-- **管理 API 整合**：所有配置修改走 `PUT /admin/api/config`，移除 6 个分散端点
-- **`/` 根路径**：从返回 JSON 端点列表改为 302 重定向到 `/admin` 管理面板
-- **stderr 日志彩色输出**：TRACE=紫、INFO=绿、WARN=黄、ERROR=红、DEBUG=蓝，
-  时间戳和目标模块变淡，仅在终端连接时启用
-- **client_version 默认值**：`1.8.0` → `2.0.0`
+- **wasmtime**：43.0.0 → 44.0.0，修复安全通告 RUSTSEC-2026-0114
+- **`model_aliases` 类型**：`HashMap<String, String>` → `Vec<String>`，按 index 对齐 `model_types`
+- **`/` 根路径**：从 JSON 端点列表改为 302 重定向到 `/admin`
+- **stderr 彩色日志**：TRACE=紫、INFO=绿、WARN=黄、ERROR=红、DEBUG=蓝，仅终端连接时启用
+- **handler/store 重构**：
+  - `chat_completions` / `anthropic_messages` 统计日志提取为 `AppState::record_request()`
+  - `admin_setup` / `admin_login` 从各 ~50 行压缩到 ~12 行
+  - `admin_reload_config` 从 ~70 行压缩到 ~10 行
+  - `StoreManager` 从读写独立 JSON 改为委托共享 `Arc<RwLock<Config>>`
+- **CI 构建重构**：
+  - `build-frontend` 独立 job，check/test 通过 `needs` 依赖前端产物
+  - `cross` 升级到 0.2.5，aarch64-linux-gnu/musl 迁移到原生 ARM 运行器（`ubuntu-24.04-arm`）
+  - `actions-rust-lang/setup-rust-toolchain` 替换 `dtolnay/rust-toolchain`
+  - `just check-web` 新增前端校验命令（npm ci + build + lint）
+- **过时内容清除**：
+  - 移除 6 个分散管理端点（keys CRUD / accounts CRUD / reload / relogin）
+  - 移除 `sse_stream()` / `SseSerializer`（流式响应全面改用 `inspect`/`map`/`TokenGuardStream`）
+  - 移除 `StopStream` / repetition detection
+  - 移除 `.dockerignore`、根目录 `Dockerfile` / `docker-compose.yml`
+  - 移除 `web/config.toml` 等无用旧文件
 
-
-- **管理面板配置页重构**：从只读查看改为完整编辑表单，支持 Server、DeepSeek、模型类型、
-  工具调用标签、代理、账号、API Keys 七节编辑。账号和 API Keys 常驻展开，
-  其余默认折叠。底部统一保存/取消按钮
-- **前端导航精简**：删除「账号池」「API Keys」独立页面（后端端点已移除），
-  功能整合到配置编辑器中。Dashboard 删除已移除的「重载配置」按钮
-- **API Keys 前端管理**：支持显示/隐藏 key 值、复制到剪贴板、添加（前端生成随机 `sk-` 值）和删除。
-  新增 key 自动显示完整值
-- **Dockerfile 精简**：移除 `adduser`/`mkdir`/`chown`（无 `USER app`）、
-  移除 `COPY web/dist`（由 `rust_embed` 编译时嵌入）、移除 `VOLUME` 声明
-- **版本号统一**：Cargo.toml 0.2.5 → 0.2.6，pyproject.toml 0.2.1 → 0.2.6，
-  与 web/package.json 0.2.6 保持一致
-- **Docker 配置模板分离**：`Dockerfile` 复制 `docker/config.example.toml` 替代根目录 `config.example.toml`，
-  Docker 镜像默认 `host = "0.0.0.0"` 且无示例账号
-- **auto-create 默认 host**：`0.0.0.0` → `127.0.0.1`，与 `config.example.toml` 一致
-- **favicon**：`public/favicon.svg` 改为 `assets/logo.svg` 的符号链接，统一图标源
-- **清理无用前端资产**：移除 Vite 默认模板遗留的 `react.svg`、`vite.svg`、`hero.png`|
-- **CI 流水线重构**：`build-frontend` 独立 job，`check`/`test` 通过 `needs` 依赖前端产物，
-  确保 CI 始终使用真实前端文件编译
-- **`just check-web`**：新增前端校验命令（`npm ci + build + lint`），与后端 `check` 分工明确
-- **pre-commit 钩子对齐 CI**：更新为 `just check-web → just check → cargo test`，三处流程一致|
 ### Removed
-- `DS_CONFIG` 环境变量：配置路径现在通过 `-c` 或 `DS_CONFIG_PATH` 指定
-- `admin.json` 和 `api_keys.json`：合并入 `config.toml`
-- 启动时的 `accounts.is_empty()` 验证：无账号启动后通过管理面板添加
-- `sse_stream_with_callback()` / `sse_stream()` / `SseSerializer` struct
-- `POST /admin/api/keys` / `DELETE /admin/api/keys/{key}` 等 6 个分散端点：
-  统一由 `PUT /admin/api/config` 替代
-- `.dockerignore`：Dockerfile 已使用精确 COPY 路径，不再需要
-- 根目录 `Dockerfile` / `docker-compose.yml`：移入 `docker/` 目录
-- `web/config.toml`：无用旧文件，前端 vite dev 已改为读取 `py-e2e-tests/config.toml`
+- `reqwest` 依赖
+- `admin.json`、`api_keys.json` 独立文件（合并入 `config.toml`）
+- 启动时 `accounts.is_empty()` 验证（无账号通过管理面板补充）
+- `DS_CONFIG` 环境变量（由 `DS_CONFIG_PATH` 替代）
+- `web/config.toml`
 
 ### Fixed
 - **CI 幂等性**：`cargo install` 步骤添加 `command -v` 前置检查
 - **client.rs 日志违规**：`print_waf_hint()` 中 11 条 `warn!` 补全 target 参数
-- **导入顺序合规**：多个模块的导入分组按规范重排
-- **管理面板 reload 路径一致**：`admin_reload_config` 使用 `AppState.config_path`
-- **空账号列表启动崩溃**：`accounts.init()` 在没有账号时不再误报 `AllAccountsFailed`
-- **stats.json 空文件警告**：空文件不再触发 EOF 解析 WARN，降级为 INFO 提示
-- **e2e 端口硬编码**：runner.py / stress_runner.py 从硬编码 5317 改为从 config.toml 动态读取端口
-
-- **AGENTS.md 过时内容修正**：`/` 端点描述（实际是 302 重定向）、`[[server.api_tokens]]`（改为 `[[api_keys]]`）、
-  WASM 故障排查提示（已改为动态探测）、admin.rs 说明（keys 已移除）
-- **AGENTS.md 内容补充**：CI pipeline 构建流程、前端 `web/` 目录结构及开发模式、管理面板配置编辑器说明
-- **web/dist/.gitkeep 暂存删除恢复**：保持空目录在 git 中，确保无前端环境也能编译 Rust|
+- **stats.json 空文件**：不再触发 EOF 解析 WARN，降级为 INFO
+- **e2e 端口硬编码**：runner.py / stress_runner.py 改为从 config.toml 动态读取端口
+- **AGENTS.md 过时内容**：`/` 端点描述、`[[server.api_tokens]]` → `[[api_keys]]`、WASM 故障排查等
 
 ### Docs
-- **Prompt injection 策略**：更新 README 中 DeepSeek 原生标签的注入策略说明
-- **CLAUDE.md / AGENTS.md**：精简架构描述，新增故障排除表、请求追踪 grep 示例、
-  `#[allow]` 策略说明、git 命令使用须经授权规则
-- **logging-spec.md**：新增 adapter 层和 ds_core 编排层代码示例，补齐全管道日志级别映射
-- **code-style.md**：修复 `docs/logging.md` 断链；补充错误消息语言约定和枚举变体 PascalCase 约定；
-  导入分组示例 `reqwest::` → `rquest::`
-- **README / README.en.md**：新增环境变量表格（`RUST_LOG`、`DS_DATA_DIR`、`DS_CONFIG_PATH`）；
-  设计哲学新增"非必要不引入额外运行时系统依赖"原则
-- **`docs/en/`**：创建英文文档目录，所有文档提供英文版
-- **README 管理面板截图**：在 Web 管理面板章节添加 Dashboard 概览页和配置编辑页截图
-- **`docs/development.md` / `docs/en/development.md`**：构建、Docker、e2e 测试等开发指南；
-  前置要求新增 `cmake`、`g++`、`libclang-dev`
+- **README / README.en.md**：新增环境变量表格；设计哲学补充"非必要不引入额外运行时系统依赖"；管理面板截图
+- **`docs/en/`**：英文文档目录，所有文档提供英文版
+- **`docs/development.md` / `docs/en/development.md`**：构建、Docker、e2e 测试开发指南
+- **Prompt injection 策略**：更新 README 中 DeepSeek 原生标签注入策略说明
+- **CLAUDE.md / AGENTS.md**：架构描述精简，新增故障排除表、请求追踪 grep 示例、`#[allow]` 策略说明
 
 ## [0.2.5] - 2026-04-30
 

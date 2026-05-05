@@ -41,16 +41,16 @@ jobs:
           if-no-files-found: error
   build-linux-gnu:
     needs: [build-frontend]
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             suffix: linux-x86_64-gnu
-            use-cross: false
+            runner: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             suffix: linux-aarch64-gnu
-            use-cross: true
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
       - name: Download frontend assets
@@ -71,16 +71,10 @@ jobs:
         with:
           target: ${{ matrix.target }}
           cache-key: ${{ matrix.target }}
-      - name: Install cross
-        if: matrix.use-cross
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cross
-      - name: Build (cross)
-        if: matrix.use-cross
-        run: cross build --release --target ${{ matrix.target }}
-      - name: Build (native)
-        if: ${{ !matrix.use-cross }}
+      - name: Install build dependencies (aarch64)
+        if: ${{ matrix.runner == 'ubuntu-24.04-arm' }}
+        run: sudo apt-get update && sudo apt-get install -y cmake g++
+      - name: Build
         run: cargo build --release --target ${{ matrix.target }}
       - name: Package
         run: |
@@ -98,14 +92,16 @@ jobs:
 
   build-linux-musl:
     needs: [build-frontend]
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
             suffix: linux-x86_64-musl
+            runner: ubuntu-latest
           - target: aarch64-unknown-linux-musl
             suffix: linux-aarch64-musl
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
       - name: Download frontend assets
@@ -126,12 +122,23 @@ jobs:
         with:
           target: ${{ matrix.target }}
           cache-key: ${{ matrix.target }}
+      - name: Install musl toolchain (aarch64)
+        if: ${{ matrix.runner == 'ubuntu-24.04-arm' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ musl-tools
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> $GITHUB_ENV
       - name: Install cross
+        if: ${{ matrix.runner != 'ubuntu-24.04-arm' }}
         uses: taiki-e/install-action@v2
         with:
           tool: cross
-      - name: Build
+      - name: Build (cross)
+        if: ${{ matrix.runner != 'ubuntu-24.04-arm' }}
         run: cross build --release --target ${{ matrix.target }}
+      - name: Build (native)
+        if: ${{ matrix.runner == 'ubuntu-24.04-arm' }}
+        run: cargo build --release --target ${{ matrix.target }}
       - name: Package
         run: |
           name="ds-free-api-${{ steps.meta.outputs.tag }}-${{ matrix.suffix }}"

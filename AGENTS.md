@@ -110,8 +110,9 @@ On tag push (`.github/workflows/release.yml`):
 
 ```
 build-frontend (npm ci + npm run build)
-  ├── build-linux-gnu (cross)    │
-  ├── build-linux-musl (cross)   │── release (tar.gz + zip)
+build-frontend (npm ci + npm run build)
+  ├── build-linux-gnu (cargo build)    │
+  ├── build-linux-musl (cross/cargo)   │── release (tar.gz + zip)
   ├── build-macos (cargo build)  │
   └── build-windows (cargo build)│
   └── docker (ghcr.io image)
@@ -487,7 +488,7 @@ cargo machete      # requires: cargo install cargo-machete
 cargo build
 cargo build --release
 
-# Release (tag push triggers CI: 8 targets x 4 platforms via cross)
+# Release (tag push triggers CI: 8 targets, 4 platforms, aarch64 on ARM runners)
 git tag v0.x.x
 git push origin v0.x.x
 # CI extracts changelog from CHANGELOG.md, creates GitHub release
