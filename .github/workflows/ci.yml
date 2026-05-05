@@ -57,10 +57,11 @@ jobs:
         run: cargo fmt --check
       - name: cargo audit
         uses: actions-rust-lang/audit@v1
+        with:
+          args: --deny warnings
       - name: cargo machete
         run: command -v cargo-machete || cargo install cargo-machete --locked && cargo machete
-      - name: cargo outdated
-        run: command -v cargo-outdated || cargo install cargo-outdated --locked && cargo outdated --root-deps-only
+        run: command -v cargo-outdated || cargo install cargo-outdated --locked && cargo outdated --exit-code 1 --root-deps-only
 
   test:
     needs: [build-frontend]

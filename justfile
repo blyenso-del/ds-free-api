@@ -8,8 +8,8 @@ check:
   cargo fmt --check      
   cargo check            
   cargo clippy -- -D warnings  
-  cargo audit
-  cargo outdated --root-deps-only
+  cargo audit --deny warnings
+  cargo outdated --exit-code 1 --root-deps-only
   cargo machete          
 
 # Build + lint frontend (npm ci, npm run build, npm run lint)
